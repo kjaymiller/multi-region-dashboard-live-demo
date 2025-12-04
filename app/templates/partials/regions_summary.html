@@ -1,0 +1,28 @@
+<div class="row g-3">
+    {% for result in results %}
+    <div class="col-md-4">
+        <div class="d-flex align-items-center p-2 bg-white rounded">
+            <span class="status-indicator {% if result.success %}status-success{% else %}status-error{% endif %}"></span>
+            <div class="flex-grow-1">
+                <strong>{{ result.region.name if result.region else result.region_id }}</strong>
+                {% if result.success %}
+                <span class="float-end {% if result.latency_ms < 50 %}latency-good{% elif result.latency_ms < 150 %}latency-medium{% else %}latency-bad{% endif %}">
+                    {{ result.latency_ms }}ms
+                </span>
+                {% else %}
+                <span class="float-end text-danger">Error</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if results %}
+<div class="text-end mt-2">
+    <small class="text-muted">
+        Best: <strong>{{ results[0].region.name if results[0].region else results[0].region_id }}</strong>
+        ({{ results[0].latency_ms if results[0].success else 'N/A' }}ms)
+    </small>
+</div>
+{% endif %}

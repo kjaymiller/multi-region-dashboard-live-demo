@@ -1,0 +1,52 @@
+{% if result.success %}
+<div class="load-test-result">
+    <div class="d-flex align-items-center mb-2">
+        <span class="status-indicator status-success"></span>
+        <strong>Load Test ({{ result.concurrent }} concurrent)</strong>
+    </div>
+
+    <div class="row g-2">
+        <div class="col-6">
+            <div class="metric-card">
+                <div class="metric-value {% if result.avg_ms < 100 %}latency-good{% elif result.avg_ms < 300 %}latency-medium{% else %}latency-bad{% endif %}">
+                    {{ result.avg_ms }}ms
+                </div>
+                <div class="metric-label">Avg Response</div>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="metric-card">
+                <div class="metric-value text-primary">{{ result.queries_per_second }}</div>
+                <div class="metric-label">Queries/sec</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-2 mt-1">
+        <div class="col-4">
+            <div class="metric-card">
+                <div class="metric-value" style="font-size: 1rem;">{{ result.min_ms }}ms</div>
+                <div class="metric-label">Min</div>
+            </div>
+        </div>
+        <div class="col-4">
+            <div class="metric-card">
+                <div class="metric-value" style="font-size: 1rem;">{{ result.max_ms }}ms</div>
+                <div class="metric-label">Max</div>
+            </div>
+        </div>
+        <div class="col-4">
+            <div class="metric-card">
+                <div class="metric-value" style="font-size: 1rem;">{{ result.total_time_ms }}ms</div>
+                <div class="metric-label">Total</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-danger mb-0">
+    <span class="status-indicator status-error"></span>
+    <strong>Load Test Failed</strong><br>
+    <small>{{ result.error }}</small>
+</div>
+{% endif %}

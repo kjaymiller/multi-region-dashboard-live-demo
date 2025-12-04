@@ -1,0 +1,38 @@
+{% if result.success %}
+<div class="connection-result">
+    <div class="d-flex align-items-center mb-2">
+        <span class="status-indicator status-success"></span>
+        <strong class="text-success">Connected</strong>
+    </div>
+
+    <div class="row g-2">
+        <div class="col-6">
+            <div class="metric-card">
+                <div class="metric-value {% if result.latency_ms < 50 %}latency-good{% elif result.latency_ms < 150 %}latency-medium{% else %}latency-bad{% endif %}">
+                    {{ result.latency_ms }}ms
+                </div>
+                <div class="metric-label">Latency</div>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="metric-card">
+                <div class="metric-value" style="font-size: 1rem;">{{ result.server_ip or 'N/A' }}</div>
+                <div class="metric-label">Server IP</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-2">
+        <small class="text-muted">
+            <strong>PID:</strong> {{ result.backend_pid }}<br>
+            <strong>Version:</strong> {{ result.pg_version[:50] }}...
+        </small>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-danger mb-0">
+    <span class="status-indicator status-error"></span>
+    <strong>Connection Failed</strong><br>
+    <small>{{ result.error }}</small>
+</div>
+{% endif %}

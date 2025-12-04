@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="container">
+        <h1>Region Connectivity Dashboard</h1>
+        <p class="lead mb-0">Test PostgreSQL connectivity and performance across multiple geographic regions</p>
+    </div>
+</div>
+
+<div class="container">
+    <!-- Quick Actions -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <h5 class="mb-1">Quick Actions</h5>
+                            <small class="text-muted">Test all regions simultaneously</small>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary"
+                                    hx-post="/api/regions/test-all"
+                                    hx-target="#all-regions-result"
+                                    hx-indicator="#all-regions-spinner">
+                                <span class="htmx-indicator spinner-border spinner-border-sm me-2" id="all-regions-spinner"></span>
+                                Test All Regions
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- All Regions Result -->
+    <div id="all-regions-result" class="mb-4"></div>
+
+    <!-- Auto-refresh Summary -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <span>Live Status</span>
+                    <small class="text-muted">Auto-refreshes every {{ refresh_interval }} seconds</small>
+                </div>
+                <div class="card-body"
+                     hx-get="/api/regions/summary"
+                     hx-trigger="load, every {{ refresh_interval }}s"
+                     hx-swap="innerHTML">
+                    <div class="text-center text-muted">
+                        <div class="spinner-border spinner-border-sm me-2"></div>
+                        Loading region status...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Region Cards -->
+    <h4 class="mb-3">Individual Region Testing</h4>
+    <div class="row">
+        {% for region in regions %}
+        <div class="col-lg-4 col-md-6 mb-4">
+            <div class="card region-card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">{{ region.name }}</h5>
+                    <small class="opacity-75">{{ region.id }}</small>
+                </div>
+                <div class="card-body">
+                    <!-- Action Buttons -->
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <button class="btn btn-primary btn-sm"
+                                hx-post="/api/regions/{{ region.id }}/test"
+                                hx-target="#result-{{ region.id }}"
+                                hx-indicator="#spinner-{{ region.id }}">
+                            <span class="htmx-indicator spinner-border spinner-border-sm me-1" id="spinner-{{ region.id }}"></span>
+                            Test Connection
+                        </button>
+
+                        <button class="btn btn-outline-primary btn-sm"
+                                hx-post="/api/regions/{{ region.id }}/latency?iterations=5"
+                                hx-target="#result-{{ region.id }}"
+                                hx-indicator="#spinner-{{ region.id }}">
+                            Measure Latency
+                        </button>
+
+                        {% if health_checks_enabled %}
+                        <button class="btn btn-outline-secondary btn-sm"
+                                hx-post="/api/regions/{{ region.id }}/health"
+                                hx-target="#result-{{ region.id }}"
+                                hx-indicator="#spinner-{{ region.id }}">
+                            Health Check
+                        </button>
+                        {% endif %}
+
+                        {% if load_testing_enabled %}
+                        <button class="btn btn-outline-warning btn-sm"
+                                hx-post="/api/regions/{{ region.id }}/load-test?concurrent=10"
+                                hx-target="#result-{{ region.id }}"
+                                hx-indicator="#spinner-{{ region.id }}">
+                            Load Test (10)
+                        </button>
+                        {% endif %}
+                    </div>
+
+                    <!-- Result Container -->
+                    <div class="result-container" id="result-{{ region.id }}">
+                        <div class="text-center text-muted">
+                            <small>Click a button to test this region</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not regions %}
+        <div class="col-12">
+            <div class="alert alert-warning">
+                No regions are currently available. Check your LaunchDarkly configuration.
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Feature Flags Info -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <span class="feature-badge me-2">LaunchDarkly</span>
+                    Feature Flags Status
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="d-flex align-items-center">
+                                <span class="status-indicator {% if health_checks_enabled %}status-success{% else %}status-error{% endif %}"></span>
+                                <span>Health Checks: {% if health_checks_enabled %}Enabled{% else %}Disabled{% endif %}</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex align-items-center">
+                                <span class="status-indicator {% if load_testing_enabled %}status-success{% else %}status-error{% endif %}"></span>
+                                <span>Load Testing: {% if load_testing_enabled %}Enabled{% else %}Disabled{% endif %}</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex align-items-center">
+                                <span class="status-indicator status-success"></span>
+                                <span>Refresh Interval: {{ refresh_interval }}s</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<footer class="mt-5 py-4 bg-light">
+    <div class="container text-center text-muted">
+        <small>Multi-Region PostgreSQL Testing Dashboard | Built with FastAPI + HTMX + Aiven + LaunchDarkly</small>
+    </div>
+</footer>
+{% endblock %}
