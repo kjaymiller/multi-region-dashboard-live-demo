@@ -77,6 +77,44 @@ def is_test_all_regions_enabled(user_key: str = "anonymous") -> bool:
     return is_feature_enabled("enable-test-all-regions", user_key)
 
 
+def is_chatbot_enabled(user_key: str = "anonymous") -> bool:
+    """Check if chatbot feature is enabled."""
+    return is_feature_enabled("dashboard-chatbot-enabled", user_key)
+
+
+def is_refresh_table_button_enabled(user_key: str = "anonymous") -> bool:
+    """Check if refresh table button is enabled."""
+    return is_feature_enabled("refresh-table-button", user_key)
+
+
+def track_chatbot_metric(
+    event_key: str,
+    user_key: str = "anonymous",
+    metric_value: float | None = None,
+    **custom_attributes
+) -> None:
+    """
+    Track a chatbot metric to LaunchDarkly.
+    
+    Args:
+        event_key: The event key defined in LaunchDarkly (e.g., 'chatbot.connection.status')
+        user_key: User identifier for the context
+        metric_value: Numeric value for the metric (required for Value/Size metrics)
+        **custom_attributes: Additional attributes to include (e.g., status, errorType, etc.)
+    """
+    if not _ld_client:
+        return  # Skip tracking if LaunchDarkly is not configured
+
+    context = get_user_context(user_key, **custom_attributes)
+    
+    if metric_value is not None:
+        # Track event with numeric value (for Value/Size metrics)
+        _ld_client.track(event_key, context, metric_value)
+    else:
+        # Track event without value (for Count or Binary/Occurrence metrics)
+        _ld_client.track(event_key, context)
+
+
 def get_enabled_regions(user_key: str = "anonymous") -> list[str]:
     """Get list of enabled region IDs for a user."""
     from app.config import REGIONS
