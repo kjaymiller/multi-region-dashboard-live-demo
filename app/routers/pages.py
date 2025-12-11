@@ -3,12 +3,14 @@
 from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 
-from app.config import get_all_regions
+from app.config import get_all_regions, LAUNCHDARKLY_CLIENT_SIDE_ID
 from app.feature_flags import (
     get_enabled_regions,
     get_refresh_interval,
     is_health_checks_enabled,
     is_load_testing_enabled,
+    is_chatbot_enabled,
+    is_refresh_table_button_enabled,
 )
 
 router = APIRouter()
@@ -37,6 +39,8 @@ async def dashboard(request: Request):
     refresh_interval = get_refresh_interval(user_key)
     health_checks_enabled = is_health_checks_enabled(user_key)
     load_testing_enabled = is_load_testing_enabled(user_key)
+    chatbot_enabled = is_chatbot_enabled(user_key)
+    refresh_table_button_enabled = is_refresh_table_button_enabled(user_key)
 
     return templates.TemplateResponse(
         "index.html",
@@ -46,5 +50,9 @@ async def dashboard(request: Request):
             "refresh_interval": refresh_interval,
             "health_checks_enabled": health_checks_enabled,
             "load_testing_enabled": load_testing_enabled,
+            "chatbot_enabled": chatbot_enabled,
+            "refresh_table_button_enabled": refresh_table_button_enabled,
+            "launchdarkly_client_side_id": LAUNCHDARKLY_CLIENT_SIDE_ID,
+            "user_key": user_key,
         },
     )

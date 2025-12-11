@@ -175,6 +175,7 @@
     </div>
 
     <!-- AI Chat Assistant -->
+    {% if chatbot_enabled %}
     <div class="row mt-4">
         <div class="col-12">
             <div class="card">
@@ -218,6 +219,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <!-- Check History -->
     <div class="row mt-4">
@@ -251,6 +253,7 @@
                             </button>
                         </div>
                         <!-- Refresh Button -->
+                        {% if refresh_table_button_enabled %}
                         <button class="btn btn-sm btn-outline-secondary"
                                 id="refresh-btn"
                                 onclick="refreshCurrentView()">
@@ -260,6 +263,7 @@
                             </svg>
                             Refresh
                         </button>
+                        {% endif %}
                     </div>
                 </div>
                 <div class="card-body p-0" id="check-history-container">
@@ -289,6 +293,68 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- LaunchDarkly Client-Side SDK with Session Replay (Module Script) -->
+{% if launchdarkly_client_side_id %}
+<script type="module">
+    (async function() {
+        try {
+            // Import LaunchDarkly SDK modules from CDN (using ES modules)
+            const { initialize } = await import('https://cdn.jsdelivr.net/npm/launchdarkly-js-client-sdk@3.0.0/+esm');
+            const Observability = (await import('https://cdn.jsdelivr.net/npm/@launchdarkly/observability@1.0.0/+esm')).default;
+            const SessionReplay = (await import('https://cdn.jsdelivr.net/npm/@launchdarkly/session-replay@1.0.0/+esm')).default;
+            const { LDRecord } = SessionReplay;
+
+            // User context - use server-provided user_key
+            const userKey = '{{ user_key }}';
+            const isAnonymous = userKey === 'anonymous';
+            const userContext = {
+                kind: 'user',
+                key: userKey,
+                anonymous: isAnonymous
+            };
+
+            // Initialize LaunchDarkly client with Observability and Session Replay plugins
+            const clientSideId = '{{ launchdarkly_client_side_id }}';
+            const ldClient = initialize(clientSideId, userContext, {
+                plugins: [
+                    new Observability({
+                        manualStart: false
+                    }),
+                    new SessionReplay({
+                        manualStart: false,
+                        privacySetting: 'default' // Options: 'none', 'default', 'strict'
+                    })
+                ]
+            });
+
+            // Wait for client to be ready
+            await ldClient.waitForInitialization();
+            console.log('LaunchDarkly client initialized with session replay');
+
+            // Start session replay recording
+            // Rage click detection is automatically handled by LaunchDarkly
+            // Configure thresholds in Project Settings > Observability > Session settings
+            LDRecord.start({
+                forceNew: false, // Continue existing session if available
+                silent: false // Show console warnings
+            });
+            console.log('Session replay started - rage clicks will be automatically detected');
+
+            // Store client globally for potential use elsewhere
+            window.ldClient = ldClient;
+
+        } catch (error) {
+            console.error('Failed to initialize LaunchDarkly:', error);
+        }
+    })();
+</script>
+{% else %}
+<script>
+    console.warn('LaunchDarkly client-side ID not configured. Set LAUNCHDARKLY_CLIENT_SIDE_ID environment variable.');
+</script>
+{% endif %}
+
+<!-- Main Dashboard JavaScript (Regular Script) -->
 <script>
     // Global variables for map and user location
     let map;
@@ -793,11 +859,14 @@
     }
 
     function refreshCurrentView() {
-        if (currentView === 'table') {
-            htmx.trigger('#check-history-table', 'load');
-        } else if (currentView === 'chart') {
-            loadChart();
-        }
+        // Disabled for rage click testing - function does nothing
+        return;
+        // Original functionality (commented out):
+        // if (currentView === 'table') {
+        //     htmx.trigger('#check-history-table', 'load');
+        // } else if (currentView === 'chart') {
+        //     loadChart();
+        // }
     }
 
     // Listen for check-updated event to refresh chart if visible
