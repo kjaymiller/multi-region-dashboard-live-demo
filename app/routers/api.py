@@ -47,13 +47,16 @@ async def test_database_connection(request: Request):
 
     # Add test result data as a custom header
     import json
-    response.headers["X-Test-Result"] = json.dumps({
-        "database_name": "database",
-        "test_type": "test",
-        "success": result.get("success", False),
-        "latency_ms": result.get("latency_ms"),
-        "error": result.get("error")
-    })
+
+    response.headers["X-Test-Result"] = json.dumps(
+        {
+            "database_name": "database",
+            "test_type": "test",
+            "success": result.get("success", False),
+            "latency_ms": result.get("latency_ms"),
+            "error": result.get("error"),
+        }
+    )
 
     return response
 
@@ -62,6 +65,7 @@ async def test_database_connection(request: Request):
 async def test_database_latency(request: Request, iterations: int = 5):
     """Measure latency to the database."""
     import json
+
     user_key = get_user_key(request)
 
     result = await measure_latency(iterations)
@@ -75,15 +79,17 @@ async def test_database_latency(request: Request, iterations: int = 5):
     )
 
     # Add test result data as a custom header
-    response.headers["X-Test-Result"] = json.dumps({
-        "database_name": "database",
-        "test_type": "latency",
-        "success": result.get("success", False),
-        "avg_latency_ms": result.get("avg_ms"),
-        "min_latency_ms": result.get("min_ms"),
-        "max_latency_ms": result.get("max_ms"),
-        "error": result.get("error")
-    })
+    response.headers["X-Test-Result"] = json.dumps(
+        {
+            "database_name": "database",
+            "test_type": "latency",
+            "success": result.get("success", False),
+            "avg_latency_ms": result.get("avg_ms"),
+            "min_latency_ms": result.get("min_ms"),
+            "max_latency_ms": result.get("max_ms"),
+            "error": result.get("error"),
+        }
+    )
 
     return response
 
@@ -92,6 +98,7 @@ async def test_database_latency(request: Request, iterations: int = 5):
 async def run_database_load_test(request: Request, concurrent: int = 10):
     """Run load test on the database."""
     import json
+
     user_key = get_user_key(request)
 
     if False:  # Load testing enabled
@@ -111,14 +118,16 @@ async def run_database_load_test(request: Request, concurrent: int = 10):
     )
 
     # Add test result data as a custom header
-    response.headers["X-Test-Result"] = json.dumps({
-        "database_name": "database",
-        "test_type": "load-test",
-        "success": result.get("success", False),
-        "connections": concurrent,
-        "avg_latency_ms": result.get("avg_ms"),
-        "error": result.get("error")
-    })
+    response.headers["X-Test-Result"] = json.dumps(
+        {
+            "database_name": "database",
+            "test_type": "load-test",
+            "success": result.get("success", False),
+            "connections": concurrent,
+            "avg_latency_ms": result.get("avg_ms"),
+            "error": result.get("error"),
+        }
+    )
 
     return response
 
@@ -127,6 +136,7 @@ async def run_database_load_test(request: Request, concurrent: int = 10):
 async def get_database_health(request: Request):
     """Get health metrics for the database."""
     import json
+
     user_key = get_user_key(request)
 
     if False:  # Health checks enabled
@@ -146,13 +156,15 @@ async def get_database_health(request: Request):
     )
 
     # Add test result data as a custom header
-    response.headers["X-Test-Result"] = json.dumps({
-        "database_name": "database",
-        "test_type": "health",
-        "success": result.get("success", False),
-        "connections": result.get("active_connections"),
-        "error": result.get("error")
-    })
+    response.headers["X-Test-Result"] = json.dumps(
+        {
+            "database_name": "database",
+            "test_type": "health",
+            "success": result.get("success", False),
+            "connections": result.get("active_connections"),
+            "error": result.get("error"),
+        }
+    )
 
     return response
 
@@ -213,12 +225,14 @@ async def get_database_info(request: Request):
     """Get database information."""
     database = get_database()
 
-    return JSONResponse(content={
-        "database": {
-            "id": "database",
-            "name": database.name,
+    return JSONResponse(
+        content={
+            "database": {
+                "id": "database",
+                "name": database.name,
+            }
         }
-    })
+    )
 
 
 @router.get("/checks/history")
@@ -242,19 +256,22 @@ async def get_check_chart_data(request: Request):
 
     # Group by check type
     from collections import defaultdict
+
     check_data = defaultdict(list)
 
     for check in checks:
         check_type = check["check_type"]
 
         if check["success"] and check["metric_value"]:
-            check_data[check_type].append({
-                "timestamp": check["checked_at"].isoformat(),
-                "value": float(check["metric_value"])
-            })
+            check_data[check_type].append(
+                {
+                    "timestamp": check["checked_at"].isoformat(),
+                    "value": float(check["metric_value"]),
+                }
+            )
 
     # Prepare data for Chart.js - use a single color for the database
-    base_color = "rgb(64, 91, 255)"  # LaunchDarkly purple
+    base_color = "rgb(64, 91, 255)"  # Purple
     bg_color = base_color.replace("rgb", "rgba").replace(")", ", 0.1)")
     database = get_database()
 
@@ -263,60 +280,68 @@ async def get_check_chart_data(request: Request):
         "connection": {"datasets": []},
         "latency": {"datasets": []},
         "load_test": {"datasets": []},
-        "health": {"datasets": []}
+        "health": {"datasets": []},
     }
 
     # Connection data
     connection_data = check_data.get("connection", [])
     if connection_data:
         connection_data.sort(key=lambda x: x["timestamp"])
-        result["connection"]["datasets"].append({
-            "label": database.name,
-            "data": [{"x": d["timestamp"], "y": d["value"]} for d in connection_data[-30:]],
-            "borderColor": base_color,
-            "backgroundColor": bg_color,
-            "tension": 0.4,
-            "fill": True
-        })
+        result["connection"]["datasets"].append(
+            {
+                "label": database.name,
+                "data": [{"x": d["timestamp"], "y": d["value"]} for d in connection_data[-30:]],
+                "borderColor": base_color,
+                "backgroundColor": bg_color,
+                "tension": 0.4,
+                "fill": True,
+            }
+        )
 
     # Latency data
     latency_data = check_data.get("latency", [])
     if latency_data:
         latency_data.sort(key=lambda x: x["timestamp"])
-        result["latency"]["datasets"].append({
-            "label": database.name,
-            "data": [{"x": d["timestamp"], "y": d["value"]} for d in latency_data[-30:]],
-            "borderColor": base_color,
-            "backgroundColor": bg_color,
-            "tension": 0.4,
-            "fill": True
-        })
+        result["latency"]["datasets"].append(
+            {
+                "label": database.name,
+                "data": [{"x": d["timestamp"], "y": d["value"]} for d in latency_data[-30:]],
+                "borderColor": base_color,
+                "backgroundColor": bg_color,
+                "tension": 0.4,
+                "fill": True,
+            }
+        )
 
     # Load test data (queries per second)
     load_test_data = check_data.get("load_test", [])
     if load_test_data:
         load_test_data.sort(key=lambda x: x["timestamp"])
-        result["load_test"]["datasets"].append({
-            "label": database.name,
-            "data": [{"x": d["timestamp"], "y": d["value"]} for d in load_test_data[-30:]],
-            "borderColor": base_color,
-            "backgroundColor": bg_color,
-            "tension": 0.4,
-            "fill": True
-        })
+        result["load_test"]["datasets"].append(
+            {
+                "label": database.name,
+                "data": [{"x": d["timestamp"], "y": d["value"]} for d in load_test_data[-30:]],
+                "borderColor": base_color,
+                "backgroundColor": bg_color,
+                "tension": 0.4,
+                "fill": True,
+            }
+        )
 
     # Health data (cache hit ratio)
     health_data = check_data.get("health", [])
     if health_data:
         health_data.sort(key=lambda x: x["timestamp"])
-        result["health"]["datasets"].append({
-            "label": database.name,
-            "data": [{"x": d["timestamp"], "y": d["value"]} for d in health_data[-30:]],
-            "borderColor": base_color,
-            "backgroundColor": bg_color,
-            "tension": 0.4,
-            "fill": True
-        })
+        result["health"]["datasets"].append(
+            {
+                "label": database.name,
+                "data": [{"x": d["timestamp"], "y": d["value"]} for d in health_data[-30:]],
+                "borderColor": base_color,
+                "backgroundColor": bg_color,
+                "tension": 0.4,
+                "fill": True,
+            }
+        )
 
     return JSONResponse(content=result)
 
@@ -340,7 +365,4 @@ async def chat(request: Request):
         response = await get_chat_response(message, recent_checks)
         return JSONResponse(content={"response": response})
     except Exception as e:
-        return JSONResponse(
-            content={"error": f"Chat service error: {str(e)}"},
-            status_code=500
-        )
+        return JSONResponse(content={"error": f"Chat service error: {str(e)}"}, status_code=500)
