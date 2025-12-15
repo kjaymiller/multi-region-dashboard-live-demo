@@ -84,7 +84,7 @@
             {% if result.pg_stat_statements and result.pg_stat_statements|length > 0 %}
 
             <!-- Charts Section -->
-            {% set chart_id = (region.id if region else 'default') | replace('-', '_') %}
+            {% set chart_id = 'database' %}
             <div class="row g-3 mb-4">
                 <div class="col-12">
                     <div class="card">

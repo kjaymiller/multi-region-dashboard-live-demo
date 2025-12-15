@@ -2,8 +2,8 @@
 
 import asyncio
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import asyncpg
 
@@ -20,11 +20,11 @@ async def get_connection(dsn: str) -> AsyncGenerator[asyncpg.Connection, None]:
         await conn.close()
 
 
-async def test_connection(region_id: str) -> dict:
-    """Test connection to a specific region and return connection info."""
-    dsn = get_dsn(region_id)
+async def test_connection() -> dict:
+    """Test connection to the database and return connection info."""
+    dsn = get_dsn()
     if not dsn:
-        return {"success": False, "error": f"No connection string for region: {region_id}"}
+        return {"success": False, "error": "No database connection string configured"}
 
     try:
         start = time.perf_counter()
@@ -50,11 +50,11 @@ async def test_connection(region_id: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
-async def measure_latency(region_id: str, iterations: int = 5) -> dict:
-    """Measure latency to a region over multiple iterations."""
-    dsn = get_dsn(region_id)
+async def measure_latency(iterations: int = 5) -> dict:
+    """Measure latency to the database over multiple iterations."""
+    dsn = get_dsn()
     if not dsn:
-        return {"success": False, "error": f"No connection string for region: {region_id}"}
+        return {"success": False, "error": "No database connection string configured"}
 
     try:
         timings = []
@@ -76,11 +76,11 @@ async def measure_latency(region_id: str, iterations: int = 5) -> dict:
         return {"success": False, "error": str(e)}
 
 
-async def load_test(region_id: str, concurrent: int = 10) -> dict:
+async def load_test(concurrent: int = 10) -> dict:
     """Run a load test with concurrent connections."""
-    dsn = get_dsn(region_id)
+    dsn = get_dsn()
     if not dsn:
-        return {"success": False, "error": f"No connection string for region: {region_id}"}
+        return {"success": False, "error": "No database connection string configured"}
 
     async def single_query():
         start = time.perf_counter()
@@ -122,11 +122,11 @@ def _is_privilege_error(error_msg: str) -> bool:
     return any(indicator in error_lower for indicator in privilege_indicators)
 
 
-async def get_health_metrics(region_id: str) -> dict:
+async def get_health_metrics() -> dict:
     """Get database health metrics including cache hit ratio and connections."""
-    dsn = get_dsn(region_id)
+    dsn = get_dsn()
     if not dsn:
-        return {"success": False, "error": f"No connection string for region: {region_id}"}
+        return {"success": False, "error": "No database connection string configured"}
 
     result = {
         "success": True,
@@ -208,7 +208,7 @@ async def get_health_metrics(region_id: str) -> dict:
                 ext_check = await conn.fetchval(
                     "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements')"
                 )
-                
+
                 if ext_check:
                     try:
                         pg_stat_result = await conn.fetch(
@@ -230,7 +230,7 @@ async def get_health_metrics(region_id: str) -> dict:
                             LIMIT 10
                             """
                         )
-                        
+
                         pg_stat_statements = []
                         for row in pg_stat_result:
                             try:
@@ -247,7 +247,7 @@ async def get_health_metrics(region_id: str) -> dict:
                             except Exception:
                                 # Skip rows with privilege issues
                                 continue
-                        
+
                         result["pg_stat_statements"] = pg_stat_statements
                         result["pg_stat_statements_available"] = True
                     except Exception as pg_stat_error:
@@ -278,28 +278,15 @@ async def get_health_metrics(region_id: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
-async def test_all_regions(region_ids: list[str]) -> dict:
-    """Test all regions concurrently and return results ranked by latency."""
-    tasks = [test_connection(region_id) for region_id in region_ids]
-    results = await asyncio.gather(*tasks)
-
-    region_results = []
-    for region_id, result in zip(region_ids, results):
-        result["region_id"] = region_id
-        region_results.append(result)
-
-    # Sort by latency (successful ones first, then by latency)
-    region_results.sort(
-        key=lambda x: (not x["success"], x.get("latency_ms", float("inf")))
-    )
-
-    return {"results": region_results}
+async def test_database() -> dict:
+    """Test database connection and return result."""
+    result = await test_connection()
+    return result
 
 
-async def save_connection_check(region_id: str, result: dict, user_key: str = None) -> None:
+async def save_connection_check(result: dict, user_key: str | None = None) -> None:
     """Save connection check result to database."""
-    # Always save to US East (primary database)
-    dsn = get_dsn("us-east")
+    dsn = get_dsn()
     if not dsn:
         return
 
@@ -312,7 +299,7 @@ async def save_connection_check(region_id: str, result: dict, user_key: str = No
                     pg_version, error_message, user_key
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
-                region_id,
+'database',
                 result.get("success", False),
                 result.get("latency_ms"),
                 result.get("server_ip"),
@@ -322,15 +309,14 @@ async def save_connection_check(region_id: str, result: dict, user_key: str = No
                 user_key,
             )
     except Exception as e:
-        # Log error but don't fail the request (table might not exist yet)
+        # Log error but don't fail request (table might not exist yet)
         import logging
-        logging.warning(f"Failed to save connection check for {region_id}: {e}")
+        logging.warning(f"Failed to save connection check: {e}")
 
 
-async def save_latency_check(region_id: str, result: dict, user_key: str = None) -> None:
+async def save_latency_check(result: dict, user_key: str | None = None) -> None:
     """Save latency check result to database."""
-    # Always save to US East (primary database)
-    dsn = get_dsn("us-east")
+    dsn = get_dsn()
     if not dsn:
         return
 
@@ -347,7 +333,7 @@ async def save_latency_check(region_id: str, result: dict, user_key: str = None)
                     timings, error_message, user_key
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 """,
-                region_id,
+                'database',
                 result.get("success", False),
                 result.get("iterations"),
                 result.get("min_ms"),
@@ -359,13 +345,12 @@ async def save_latency_check(region_id: str, result: dict, user_key: str = None)
             )
     except Exception as e:
         import logging
-        logging.warning(f"Failed to save latency check for {region_id}: {e}")
+        logging.warning(f"Failed to save latency check: {e}")
 
 
-async def save_load_test_check(region_id: str, result: dict, user_key: str = None) -> None:
+async def save_load_test_check(result: dict, user_key: str | None = None) -> None:
     """Save load test result to database."""
-    # Always save to US East (primary database)
-    dsn = get_dsn("us-east")
+    dsn = get_dsn()
     if not dsn:
         return
 
@@ -378,7 +363,7 @@ async def save_load_test_check(region_id: str, result: dict, user_key: str = Non
                     avg_ms, total_time_ms, queries_per_second, error_message, user_key
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 """,
-                region_id,
+                'database',
                 result.get("success", False),
                 result.get("concurrent"),
                 result.get("min_ms"),
@@ -391,13 +376,12 @@ async def save_load_test_check(region_id: str, result: dict, user_key: str = Non
             )
     except Exception as e:
         import logging
-        logging.warning(f"Failed to save load test check for {region_id}: {e}")
+        logging.warning(f"Failed to save load test check: {e}")
 
 
-async def save_health_metrics_check(region_id: str, result: dict, user_key: str = None) -> None:
+async def save_health_metrics_check(result: dict, user_key: str | None = None) -> None:
     """Save health metrics check result to database."""
-    # Always save to US East (primary database)
-    dsn = get_dsn("us-east")
+    dsn = get_dsn()
     if not dsn:
         return
 
@@ -415,7 +399,7 @@ async def save_health_metrics_check(region_id: str, result: dict, user_key: str 
                     pg_stat_statements_available, warnings, error_message, user_key
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 """,
-                region_id,
+                'database',
                 result.get("success", False),
                 result.get("cache_hit_ratio"),
                 result.get("active_connections"),
@@ -429,12 +413,12 @@ async def save_health_metrics_check(region_id: str, result: dict, user_key: str 
             )
     except Exception as e:
         import logging
-        logging.warning(f"Failed to save health metrics check for {region_id}: {e}")
+        logging.warning(f"Failed to save health metrics check: {e}")
 
 
-async def get_recent_connection_checks(region_id: str, limit: int = 10) -> list[dict]:
-    """Get recent connection check history for a region."""
-    dsn = get_dsn(region_id)
+async def get_recent_connection_checks(limit: int = 10) -> list[dict]:
+    """Get recent connection check history."""
+    dsn = get_dsn()
     if not dsn:
         return []
 
@@ -446,11 +430,9 @@ async def get_recent_connection_checks(region_id: str, limit: int = 10) -> list[
                     id, region_id, checked_at, success, latency_ms,
                     server_ip, backend_pid, error_message
                 FROM connection_checks
-                WHERE region_id = $1
                 ORDER BY checked_at DESC
-                LIMIT $2
+                LIMIT $1
                 """,
-                region_id,
                 limit,
             )
 
@@ -459,9 +441,9 @@ async def get_recent_connection_checks(region_id: str, limit: int = 10) -> list[
         return []
 
 
-async def get_connection_check_summary(region_id: str) -> dict:
+async def get_connection_check_summary() -> dict:
     """Get summary statistics for connection checks in the last 24 hours."""
-    dsn = get_dsn(region_id)
+    dsn = get_dsn()
     if not dsn:
         return {}
 
@@ -472,7 +454,7 @@ async def get_connection_check_summary(region_id: str) -> dict:
                 SELECT * FROM recent_connection_checks
                 WHERE region_id = $1
                 """,
-                region_id,
+                'database',
             )
 
             return dict(row) if row else {}
@@ -480,10 +462,9 @@ async def get_connection_check_summary(region_id: str) -> dict:
         return {}
 
 
-async def get_all_recent_checks(region_ids: list[str], limit: int = 20) -> list[dict]:
+async def get_all_recent_checks(limit: int = 20) -> list[dict]:
     """Get recent checks across all regions combined, sorted by timestamp."""
-    # Always query from US East (primary database where all checks are stored)
-    dsn = get_dsn("us-east")
+    dsn = get_dsn()
     if not dsn:
         return []
 
@@ -502,7 +483,6 @@ async def get_all_recent_checks(region_ids: list[str], limit: int = 20) -> list[
                     error_message,
                     user_key
                 FROM connection_checks
-                WHERE region_id = ANY($1)
 
                 UNION ALL
 
@@ -516,7 +496,6 @@ async def get_all_recent_checks(region_ids: list[str], limit: int = 20) -> list[
                     error_message,
                     user_key
                 FROM latency_checks
-                WHERE region_id = ANY($1)
 
                 UNION ALL
 
@@ -530,7 +509,6 @@ async def get_all_recent_checks(region_ids: list[str], limit: int = 20) -> list[
                     error_message,
                     user_key
                 FROM load_test_checks
-                WHERE region_id = ANY($1)
 
                 UNION ALL
 
@@ -544,12 +522,10 @@ async def get_all_recent_checks(region_ids: list[str], limit: int = 20) -> list[
                     error_message,
                     user_key
                 FROM health_metrics_checks
-                WHERE region_id = ANY($1)
 
                 ORDER BY checked_at DESC
-                LIMIT $2
+                LIMIT $1
                 """,
-                region_ids,
                 limit,
             )
 

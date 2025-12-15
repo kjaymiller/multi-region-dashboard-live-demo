@@ -3,22 +3,23 @@
 {% block content %}
 <div class="hero-section">
     <div class="container">
-        <h1>Region Connectivity Dashboard</h1>
-        <p class="lead mb-0">Test PostgreSQL connectivity and performance across multiple geographic regions</p>
+        <h1>Database Performance Dashboard</h1>
+        <p class="lead mb-0">Test PostgreSQL connectivity and performance</p>
     </div>
 </div>
 
 <div class="container">
-    <!-- Map Section -->
+    <!-- Database Info Section -->
     <div class="row mb-4">
         <div class="col-12">
             <div class="card">
                 <div class="card-header">
-                    <h5 class="mb-0">Server Locations Map</h5>
-                    <small class="opacity-75">Database regions and your location</small>
+                    <h5 class="mb-0">Database Information</h5>
+                    <small class="opacity-75">Connection details and status</small>
                 </div>
-                <div class="card-body p-0">
-                    <div id="map"></div>
+                <div class="card-body">
+                    <h6>{{ database.name }}</h6>
+                    <p class="text-muted mb-0">PostgreSQL Database Performance Testing</p>
                 </div>
             </div>
         </div>
@@ -32,15 +33,15 @@
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <div>
                             <h5 class="mb-1">Quick Actions</h5>
-                            <small class="text-muted">Test all regions simultaneously</small>
+                            <small class="text-muted">Test all database functions</small>
                         </div>
                         <div class="d-flex gap-2">
                             <button class="btn btn-primary"
-                                    hx-post="/api/regions/test-all"
-                                    hx-target="#all-regions-result"
-                                    hx-indicator="#all-regions-spinner">
-                                <span class="htmx-indicator spinner-border spinner-border-sm me-2" id="all-regions-spinner"></span>
-                                Test All Regions
+                                    hx-post="/api/database/test-all"
+                                    hx-target="#all-database-result"
+                                    hx-indicator="#all-database-spinner">
+                                <span class="htmx-indicator spinner-border spinner-border-sm me-2" id="all-database-spinner"></span>
+                                Test All Functions
                             </button>
                         </div>
                     </div>
@@ -49,8 +50,8 @@
         </div>
     </div>
 
-    <!-- All Regions Result -->
-    <div id="all-regions-result" class="mb-4"></div>
+    <!-- All Database Result -->
+    <div id="all-database-result" class="mb-4"></div>
 
     <!-- Auto-refresh Summary -->
     <div class="row mb-4">
@@ -61,83 +62,73 @@
                     <small class="text-muted">Auto-refreshes every {{ refresh_interval }} seconds</small>
                 </div>
                 <div class="card-body"
-                     hx-get="/api/regions/summary"
+                     hx-get="/api/database/summary"
                      hx-trigger="load, every {{ refresh_interval }}s"
                      hx-swap="innerHTML">
                     <div class="text-center text-muted">
                         <div class="spinner-border spinner-border-sm me-2"></div>
-                        Loading region status...
+                        Loading database status...
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Region Cards -->
-    <h4 class="mb-3">Individual Region Testing</h4>
+    <!-- Database Testing Card -->
+    <h4 class="mb-3">Database Testing</h4>
     <div class="row">
-        {% for region in regions %}
-        <div class="col-lg-4 col-md-6 mb-4">
-            <div class="card region-card h-100">
+        <div class="col-lg-6 mx-auto">
+            <div class="card database-card h-100">
                 <div class="card-header">
-                    <h5 class="mb-0">{{ region.name }}</h5>
-                    <small class="opacity-75">{{ region.id }}</small>
+                    <h5 class="mb-0">{{ database.name }}</h5>
+                    <small class="opacity-75">Performance Tests</small>
                 </div>
                 <div class="card-body">
                     <!-- Action Buttons -->
                     <div class="d-flex flex-wrap gap-2 mb-3">
                         <button class="btn btn-primary btn-sm"
-                                hx-post="/api/regions/{{ region.id }}/test"
-                                hx-target="#result-{{ region.id }}"
-                                hx-indicator="#spinner-{{ region.id }}">
-                            <span class="htmx-indicator spinner-border spinner-border-sm me-1" id="spinner-{{ region.id }}"></span>
+                                hx-post="/api/database/test"
+                                hx-target="#database-result"
+                                hx-indicator="#database-spinner">
+                            <span class="htmx-indicator spinner-border spinner-border-sm me-1" id="database-spinner"></span>
                             Test Connection
                         </button>
 
                         <button class="btn btn-outline-primary btn-sm"
-                                hx-post="/api/regions/{{ region.id }}/latency?iterations=5"
-                                hx-target="#result-{{ region.id }}"
-                                hx-indicator="#spinner-{{ region.id }}">
+                                hx-post="/api/database/latency?iterations=5"
+                                hx-target="#database-result"
+                                hx-indicator="#database-spinner">
                             Measure Latency
                         </button>
 
                         {% if health_checks_enabled %}
                         <button class="btn btn-outline-secondary btn-sm"
-                                hx-post="/api/regions/{{ region.id }}/health"
-                                hx-target="#result-{{ region.id }}"
-                                hx-indicator="#spinner-{{ region.id }}">
+                                hx-post="/api/database/health"
+                                hx-target="#database-result"
+                                hx-indicator="#database-spinner">
                             Health Check
                         </button>
                         {% endif %}
 
                         {% if load_testing_enabled %}
                         <button class="btn btn-outline-warning btn-sm"
-                                hx-post="/api/regions/{{ region.id }}/load-test?concurrent=10"
-                                hx-target="#result-{{ region.id }}"
-                                hx-indicator="#spinner-{{ region.id }}">
+                                hx-post="/api/database/load-test?concurrent=10"
+                                hx-target="#database-result"
+                                hx-indicator="#database-spinner">
                             Load Test (10)
                         </button>
                         {% endif %}
                     </div>
 
                     <!-- Result Container -->
-                    <div class="result-container" id="result-{{ region.id }}">
+                    <div class="result-container" id="database-result">
                         <div class="text-center text-muted">
-                            <small>Click a button to test this region</small>
+                            <small>Click a button to test the database</small>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        {% endfor %}
-
-        {% if not regions %}
-        <div class="col-12">
-            <div class="alert alert-warning">
-                No regions are currently available. Check your LaunchDarkly configuration.
-            </div>
-        </div>
-        {% endif %}
     </div>
 
     <!-- Feature Flags Info -->
@@ -293,670 +284,49 @@
 {% endblock %}
 
 {% block scripts %}
-<!-- LaunchDarkly Client-Side SDK with Session Replay (Module Script) -->
-{% if launchdarkly_client_side_id %}
-<script type="module">
-    (async function() {
-        try {
-            // Import LaunchDarkly SDK modules from CDN (using ES modules)
-            const { initialize } = await import('https://cdn.jsdelivr.net/npm/launchdarkly-js-client-sdk@3.0.0/+esm');
-            const Observability = (await import('https://cdn.jsdelivr.net/npm/@launchdarkly/observability@1.0.0/+esm')).default;
-            const SessionReplay = (await import('https://cdn.jsdelivr.net/npm/@launchdarkly/session-replay@1.0.0/+esm')).default;
-            const { LDRecord } = SessionReplay;
 
-            // User context - use server-provided user_key
-            const userKey = '{{ user_key }}';
-            const isAnonymous = userKey === 'anonymous';
-            const userContext = {
-                kind: 'user',
-                key: userKey,
-                anonymous: isAnonymous
-            };
 
-            // Initialize LaunchDarkly client with Observability and Session Replay plugins
-            const clientSideId = '{{ launchdarkly_client_side_id }}';
-            const ldClient = initialize(clientSideId, userContext, {
-                plugins: [
-                    new Observability({
-                        manualStart: false
-                    }),
-                    new SessionReplay({
-                        manualStart: false,
-                        privacySetting: 'default' // Options: 'none', 'default', 'strict'
-                    })
-                ]
-            });
-
-            // Wait for client to be ready
-            await ldClient.waitForInitialization();
-            console.log('LaunchDarkly client initialized with session replay');
-
-            // Start session replay recording
-            // Rage click detection is automatically handled by LaunchDarkly
-            // Configure thresholds in Project Settings > Observability > Session settings
-            LDRecord.start({
-                forceNew: false, // Continue existing session if available
-                silent: false // Show console warnings
-            });
-            console.log('Session replay started - rage clicks will be automatically detected');
-
-            // Store client globally for potential use elsewhere
-            window.ldClient = ldClient;
-
-        } catch (error) {
-            console.error('Failed to initialize LaunchDarkly:', error);
-        }
-    })();
-</script>
-{% else %}
+<!-- Database Dashboard JavaScript -->
 <script>
-    console.warn('LaunchDarkly client-side ID not configured. Set LAUNCHDARKLY_CLIENT_SIDE_ID environment variable.');
-</script>
-{% endif %}
-
-<!-- Main Dashboard JavaScript (Regular Script) -->
-<script>
-    // Global variables for map and user location
-    let map;
-    let userLocation = null;
-    let regionLocations = {};
-    let testLines = {};
-
-    document.addEventListener('DOMContentLoaded', async function() {
-        // Initialize the map centered on the world
-        map = L.map('map').setView([20, 0], 2);
-
-        // Add OpenStreetMap tiles
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            maxZoom: 19
-        }).addTo(map);
-
-        // Custom icon for server locations
-        const serverIcon = L.divIcon({
-            html: '<div style="background-color: #ff3554; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>',
-            className: '',
-            iconSize: [24, 24],
-            iconAnchor: [12, 12]
-        });
-
-        // Custom icon for user location
-        const userIcon = L.divIcon({
-            html: '<div style="background-color: #405BFF; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>',
-            className: '',
-            iconSize: [20, 20],
-            iconAnchor: [10, 10]
-        });
-
-        try {
-            // Fetch server locations from API
-            const response = await fetch('/api/regions/locations');
-            const data = await response.json();
-
-            // Add markers for each server region and store locations
-            data.regions.forEach(region => {
-                // Store region location for later use
-                regionLocations[region.id] = {
-                    lat: region.latitude,
-                    lng: region.longitude,
-                    name: region.name
-                };
-
-                const marker = L.marker([region.latitude, region.longitude], {
-                    icon: serverIcon
-                }).addTo(map);
-
-                marker.bindPopup(`
-                    <div style="text-align: center;">
-                        <h6>${region.name}</h6>
-                        <small style="color: #6c757d;">${region.id}</small>
-                        <br>
-                        <small style="color: #6c757d;">Server Location</small>
-                    </div>
-                `);
-            });
-
-            // Add user location if geolocation is available
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    function(position) {
-                        const userLat = position.coords.latitude;
-                        const userLng = position.coords.longitude;
-
-                        // Store user location globally
-                        userLocation = { lat: userLat, lng: userLng };
-
-                        // Add user location marker
-                        const userMarker = L.marker([userLat, userLng], {
-                            icon: userIcon
-                        }).addTo(map);
-
-                        userMarker.bindPopup(`
-                            <div style="text-align: center;">
-                                <h6>Your Location</h6>
-                                <small style="color: #6c757d;">Lat: ${userLat.toFixed(4)}, Lng: ${userLng.toFixed(4)}</small>
-                            </div>
-                        `).openPopup();
-
-                        // Optionally adjust the map view to include user location
-                        const bounds = L.latLngBounds([]);
-                        bounds.extend([userLat, userLng]);
-                        data.regions.forEach(region => {
-                            bounds.extend([region.latitude, region.longitude]);
-                        });
-                        map.fitBounds(bounds, { padding: [50, 50] });
-                    },
-                    function(error) {
-                        console.log('Geolocation error:', error.message);
-                    }
-                );
-            }
-        } catch (error) {
-            console.error('Error loading map data:', error);
-        }
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('Database Dashboard loaded');
     });
 
-    // Function to get color based on test type
-    function getTestColor(testType) {
-        const colors = {
-            'test': '#ff3554',        // Aiven red for connection tests
-            'latency': '#ffc107',     // Yellow for latency tests
-            'health': '#28a745',      // Green for health checks
-            'load-test': '#dc3545'    // Dark red for load tests
-        };
-        return colors[testType] || '#405BFF';
-    }
-
-    // Function to draw a line from user to region
-    function drawTestLine(regionId, testType, result) {
-        if (!userLocation || !regionLocations[regionId]) {
-            console.log('Cannot draw line: user location or region location not available');
-            return;
-        }
-
-        const region = regionLocations[regionId];
-        const color = getTestColor(testType);
-
-        // Remove all existing lines before drawing a new one
-        Object.keys(testLines).forEach(key => {
-            map.removeLayer(testLines[key]);
-        });
-        testLines = {};
-
-        // Create line from user to region
-        const lineOptions = {
-            color: color,
-            weight: 3,
-            opacity: result.pending ? 0.5 : 0.7,
-            dashArray: result.pending ? '5, 10' : (testType === 'latency' ? '10, 10' : null),
-            className: result.pending ? 'pulsing-line' : ''
-        };
-
-        const line = L.polyline(
-            [[userLocation.lat, userLocation.lng], [region.lat, region.lng]],
-            lineOptions
-        ).addTo(map);
-
-        // Format result for tooltip
-        let tooltipContent = `<div style="text-align: center; min-width: 150px;">`;
-        tooltipContent += `<strong>${region.name}</strong><br>`;
-        tooltipContent += `<small>Test Type: ${testType}</small><br>`;
-
-        if (result.pending) {
-            tooltipContent += `<span style="color: #6c757d;">⏳ ${result.message || 'Testing...'}</span>`;
-        } else if (result.success) {
-            tooltipContent += `<span style="color: #28a745;">✓ Success</span><br>`;
-            if (result.latency_ms) {
-                tooltipContent += `<small>Latency: ${result.latency_ms.toFixed(2)}ms</small>`;
-            }
-            if (result.avg_latency_ms) {
-                tooltipContent += `<small>Avg Latency: ${result.avg_latency_ms.toFixed(2)}ms</small>`;
-            }
-            if (result.connections) {
-                tooltipContent += `<small>Connections: ${result.connections}</small>`;
-            }
-        } else {
-            tooltipContent += `<span style="color: #dc3545;">✗ Failed</span><br>`;
-            if (result.error) {
-                tooltipContent += `<small>${result.error}</small>`;
-            }
-        }
-        tooltipContent += `</div>`;
-
-        // Bind tooltip to line
-        line.bindTooltip(tooltipContent, {
-            permanent: false,
-            sticky: true
-        });
-
-        // Store the line reference
-        testLines[regionId] = line;
-
-        // Optionally show the tooltip immediately
-        line.openTooltip();
-    }
-
-    // Listen for HTMX beforeRequest to draw placeholder line immediately
-    document.body.addEventListener('htmx:beforeRequest', function(event) {
-        const path = event.detail.pathInfo.requestPath;
-
-        // Extract region ID and test type from the URL
-        const regionMatch = path.match(/\/api\/regions\/([^\/]+)\/([^?\/]+)/);
-
-        if (regionMatch) {
-            const regionId = regionMatch[1];
-            const testType = regionMatch[2];
-
-            // Draw placeholder line immediately
-            const placeholderResult = {
-                success: null,
-                pending: true,
-                message: 'Testing...'
-            };
-
-            drawTestLine(regionId, testType, placeholderResult);
-        }
-    });
-
-    // Listen for HTMX afterRequest to update line with actual results
-    document.body.addEventListener('htmx:afterRequest', function(event) {
-        const xhr = event.detail.xhr;
-
-        if (xhr) {
-            // Check for custom test result header
-            const testResultHeader = xhr.getResponseHeader('X-Test-Result');
-
-            if (testResultHeader) {
-                try {
-                    const testData = JSON.parse(testResultHeader);
-
-                    // Update the line on the map with the actual test data
-                    drawTestLine(testData.region_id, testData.test_type, testData);
-
-                    // Trigger check history refresh
-                    document.body.dispatchEvent(new CustomEvent('check-updated'));
-                } catch (error) {
-                    console.error('Error parsing test result header:', error);
-                }
-            }
-        }
-    });
-
-    // View switching functions
+    // Simple view switching functions
     let currentView = 'table';
 
     function switchView(view) {
         currentView = view;
-
-        const tableView = document.getElementById('check-history-table');
-        const chartView = document.getElementById('check-history-chart');
-        const tableBtn = document.getElementById('view-table-btn');
-        const chartBtn = document.getElementById('view-chart-btn');
-
-        if (view === 'table') {
-            tableView.style.display = 'block';
-            chartView.style.display = 'none';
-            tableBtn.classList.add('active');
-            chartBtn.classList.remove('active');
-
-            // Trigger table refresh
-            htmx.trigger('#check-history-table', 'load');
-        } else if (view === 'chart') {
-            tableView.style.display = 'none';
-            chartView.style.display = 'block';
-            tableBtn.classList.remove('active');
-            chartBtn.classList.add('active');
-
-            // Load chart
-            loadChart();
-        }
-    }
-
-    function loadChart() {
-        const chartView = document.getElementById('check-history-chart');
-
-        // Show loading
-        chartView.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>Loading charts...</div>';
-
-        // Destroy existing charts if they exist
-        if (window.chartInstances) {
-            Object.values(window.chartInstances).forEach(chart => chart.destroy());
-        }
-        window.chartInstances = {};
-
-        // Fetch chart data and render
-        fetch('/api/checks/chart-data')
-            .then(response => response.json())
-            .then(data => {
-                // Check if we have any data at all
-                const hasData = Object.values(data).some(chartData => chartData.datasets && chartData.datasets.length > 0);
-
-                if (!hasData) {
-                    chartView.innerHTML = '<div class="text-center text-muted py-4"><p>No data available yet. Run some tests to see the charts!</p></div>';
-                    return;
-                }
-
-                // Create layout for multiple charts
-                chartView.innerHTML = `
-                    <div style="padding: 1rem;">
-                        <div class="row g-4">
-                            ${data.connection.datasets.length > 0 ? `
-                            <div class="col-md-6">
-                                <div class="card">
-                                    <div class="card-body">
-                                        <h6 class="card-title text-center mb-3">Connection Test Latency</h6>
-                                        <div style="height: 300px;">
-                                            <canvas id="connectionChart"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            ` : ''}
-                            ${data.latency.datasets.length > 0 ? `
-                            <div class="col-md-6">
-                                <div class="card">
-                                    <div class="card-body">
-                                        <h6 class="card-title text-center mb-3">Latency Measurements</h6>
-                                        <div style="height: 300px;">
-                                            <canvas id="latencyChart"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            ` : ''}
-                            ${data.load_test.datasets.length > 0 ? `
-                            <div class="col-md-6">
-                                <div class="card">
-                                    <div class="card-body">
-                                        <h6 class="card-title text-center mb-3">Load Test Performance</h6>
-                                        <div style="height: 300px;">
-                                            <canvas id="loadTestChart"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            ` : ''}
-                            ${data.health.datasets.length > 0 ? `
-                            <div class="col-md-6">
-                                <div class="card">
-                                    <div class="card-body">
-                                        <h6 class="card-title text-center mb-3">Cache Hit Ratio</h6>
-                                        <div style="height: 300px;">
-                                            <canvas id="healthChart"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            ` : ''}
-                        </div>
-                    </div>
-                `;
-
-                // Common chart options
-                const baseOptions = {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: true,
-                            position: 'top'
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false
-                        }
-                    },
-                    scales: {
-                        x: {
-                            type: 'time',
-                            time: {
-                                unit: 'minute',
-                                displayFormats: {
-                                    minute: 'HH:mm'
-                                }
-                            },
-                            title: {
-                                display: true,
-                                text: 'Time'
-                            }
-                        },
-                        y: {
-                            beginAtZero: true
-                        }
-                    },
-                    interaction: {
-                        mode: 'nearest',
-                        axis: 'x',
-                        intersect: false
-                    }
-                };
-
-                // Create connection chart
-                if (data.connection.datasets.length > 0) {
-                    const ctx = document.getElementById('connectionChart');
-                    if (ctx) {
-                        window.chartInstances.connection = new Chart(ctx, {
-                            type: 'line',
-                            data: data.connection,
-                            options: {
-                                ...baseOptions,
-                                scales: {
-                                    ...baseOptions.scales,
-                                    y: {
-                                        ...baseOptions.scales.y,
-                                        title: { display: true, text: 'Latency (ms)' }
-                                    }
-                                },
-                                plugins: {
-                                    ...baseOptions.plugins,
-                                    tooltip: {
-                                        ...baseOptions.plugins.tooltip,
-                                        callbacks: {
-                                            label: (context) => `${context.dataset.label}: ${context.parsed.y.toFixed(2)} ms`
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    }
-                }
-
-                // Create latency chart
-                if (data.latency.datasets.length > 0) {
-                    const ctx = document.getElementById('latencyChart');
-                    if (ctx) {
-                        window.chartInstances.latency = new Chart(ctx, {
-                            type: 'line',
-                            data: data.latency,
-                            options: {
-                                ...baseOptions,
-                                scales: {
-                                    ...baseOptions.scales,
-                                    y: {
-                                        ...baseOptions.scales.y,
-                                        title: { display: true, text: 'Avg Latency (ms)' }
-                                    }
-                                },
-                                plugins: {
-                                    ...baseOptions.plugins,
-                                    tooltip: {
-                                        ...baseOptions.plugins.tooltip,
-                                        callbacks: {
-                                            label: (context) => `${context.dataset.label}: ${context.parsed.y.toFixed(2)} ms`
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    }
-                }
-
-                // Create load test chart
-                if (data.load_test.datasets.length > 0) {
-                    const ctx = document.getElementById('loadTestChart');
-                    if (ctx) {
-                        window.chartInstances.loadTest = new Chart(ctx, {
-                            type: 'line',
-                            data: data.load_test,
-                            options: {
-                                ...baseOptions,
-                                scales: {
-                                    ...baseOptions.scales,
-                                    y: {
-                                        ...baseOptions.scales.y,
-                                        title: { display: true, text: 'Queries/Second' }
-                                    }
-                                },
-                                plugins: {
-                                    ...baseOptions.plugins,
-                                    tooltip: {
-                                        ...baseOptions.plugins.tooltip,
-                                        callbacks: {
-                                            label: (context) => `${context.dataset.label}: ${context.parsed.y.toFixed(2)} qps`
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    }
-                }
-
-                // Create health chart
-                if (data.health.datasets.length > 0) {
-                    const ctx = document.getElementById('healthChart');
-                    if (ctx) {
-                        window.chartInstances.health = new Chart(ctx, {
-                            type: 'line',
-                            data: data.health,
-                            options: {
-                                ...baseOptions,
-                                scales: {
-                                    ...baseOptions.scales,
-                                    y: {
-                                        ...baseOptions.scales.y,
-                                        max: 100,
-                                        title: { display: true, text: 'Cache Hit Ratio (%)' }
-                                    }
-                                },
-                                plugins: {
-                                    ...baseOptions.plugins,
-                                    tooltip: {
-                                        ...baseOptions.plugins.tooltip,
-                                        callbacks: {
-                                            label: (context) => `${context.dataset.label}: ${context.parsed.y.toFixed(2)}%`
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    }
-                }
-            })
-            .catch(error => {
-                console.error('Error loading chart data:', error);
-                chartView.innerHTML = '<div class="text-center text-muted py-4"><p>Error loading chart data</p></div>';
-            });
-    }
-
-    function refreshCurrentView() {
-        // Disabled for rage click testing - function does nothing
-        return;
-        // Original functionality (commented out):
-        // if (currentView === 'table') {
-        //     htmx.trigger('#check-history-table', 'load');
-        // } else if (currentView === 'chart') {
-        //     loadChart();
-        // }
-    }
-
-    // Listen for check-updated event to refresh chart if visible
-    document.body.addEventListener('check-updated', function() {
-        if (currentView === 'chart') {
-            setTimeout(() => loadChart(), 500);
-        }
-    });
-
-    // Chat functions
-    function sendChatMessage() {
-        const input = document.getElementById('chat-input');
-        const message = input.value.trim();
-
-        if (!message) {
-            return;
-        }
-
-        // Clear input
-        input.value = '';
-
-        // Add user message to chat
-        addChatMessage(message, 'user');
-
-        // Show loading indicator
-        const loadingId = addChatMessage('Thinking...', 'assistant', true);
-
-        // Send to API
-        fetch('/api/chat', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ message: message })
-        })
-        .then(response => response.json())
-        .then(data => {
-            // Remove loading indicator
-            document.getElementById(loadingId).remove();
-
-            if (data.error) {
-                addChatMessage('Sorry, I encountered an error: ' + data.error, 'assistant', false, true);
-            } else {
-                addChatMessage(data.response, 'assistant');
-            }
-        })
-        .catch(error => {
-            // Remove loading indicator
-            document.getElementById(loadingId).remove();
-            addChatMessage('Sorry, I could not connect to the chat service.', 'assistant', false, true);
-            console.error('Chat error:', error);
+        
+        // Update button states
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.classList.remove('active');
         });
+        document.querySelector(`[data-view="${view}"]`).classList.add('active');
+        
+        // Update visibility
+        document.querySelectorAll('.view-content').forEach(content => {
+            content.style.display = 'none';
+        });
+        document.getElementById(`${view}-view`).style.display = 'block';
     }
 
-    function addChatMessage(text, role, isLoading = false, isError = false) {
-        const messagesDiv = document.getElementById('chat-messages');
-        const messageId = 'msg-' + Date.now();
-
-        // Remove welcome message if it exists
-        const welcomeMsg = messagesDiv.querySelector('.text-muted.text-center');
-        if (welcomeMsg) {
-            welcomeMsg.remove();
-        }
-
-        const messageDiv = document.createElement('div');
-        messageDiv.id = messageId;
-        messageDiv.className = 'mb-3';
-
-        const isUser = role === 'user';
-        const bgColor = isUser ? '#405BFF' : (isError ? '#dc3545' : '#ffffff');
-        const textColor = isUser ? '#ffffff' : '#000000';
-        const alignment = isUser ? 'text-end' : 'text-start';
-
-        messageDiv.innerHTML = `
-            <div class="${alignment}">
-                <div style="display: inline-block; max-width: 80%; text-align: left; background: ${bgColor}; color: ${textColor}; padding: 0.75rem 1rem; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    ${isLoading ? '<span class="spinner-border spinner-border-sm me-2"></span>' : ''}
-                    <strong>${isUser ? 'You' : '🤖 Assistant'}:</strong><br>
-                    <span style="white-space: pre-wrap;">${escapeHtml(text)}</span>
-                </div>
-            </div>
-        `;
-
-        messagesDiv.appendChild(messageDiv);
-
-        // Scroll to bottom
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-
-        return messageId;
-    }
+    // Initialize view
+    document.addEventListener('DOMContentLoaded', function() {
+        // Set initial view
+        switchView('table');
+        
+        // Listen for check updates to refresh history view
+        document.body.addEventListener('check-updated', function() {
+            if (currentView === 'table') {
+                // Refresh history if currently in table view
+                htmx.ajax('GET', '/api/checks/history?limit=20', {
+                    target: '#check-history-body',
+                    swap: 'innerHTML'
+                });
+            }
+        });
+    });
 
     function escapeHtml(text) {
         const map = {

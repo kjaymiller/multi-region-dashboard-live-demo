@@ -1,9 +1,9 @@
 """Chat integration with Ollama for database performance insights."""
 
 import json
-from typing import AsyncGenerator
-import httpx
+from collections.abc import AsyncGenerator
 
+import httpx
 
 OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_MODEL = "llama3.2:latest"

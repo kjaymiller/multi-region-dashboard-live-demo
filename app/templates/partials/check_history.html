@@ -4,7 +4,7 @@
         <thead>
             <tr>
                 <th>Timestamp</th>
-                <th>Region</th>
+                <th>Database</th>
                 <th>Check Type</th>
                 <th>Status</th>
                 <th>Metric</th>
@@ -18,9 +18,9 @@
                     <small>{{ check.checked_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
                 </td>
                 <td>
-                    <strong>{{ check.region.name if check.region else check.region_id }}</strong>
+                    <strong>Database</strong>
                     <br>
-                    <small class="text-muted">{{ check.region_id }}</small>
+                    <small class="text-muted">PostgreSQL</small>
                 </td>
                 <td>
                     {% if check.check_type == 'connection' %}

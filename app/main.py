@@ -6,8 +6,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-
-from app.routers import pages, api
+from app.routers import api, pages
 
 
 @asynccontextmanager

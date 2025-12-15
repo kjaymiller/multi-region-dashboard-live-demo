@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # FastAPI Dashboard Application
+  app:
+    build: .
+    container_name: dashboard_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Local database (default) - override with env var for remote DB
+      DATABASE_URL: ${DATABASE_URL:-postgresql://dashboard_user:dashboard_password@postgres:5432/dashboard}
+      
+      # FastAPI settings
+      HOST: 0.0.0.0
+      PORT: 8000
+      DEBUG: "false"
+      
+      # CORS settings (adjust for your frontend domain)
+      CORS_ORIGINS: "http://localhost:8000,http://127.0.0.1:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    networks:
+      - dashboard_network
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    profiles:
+      - app
+
+  # PostgreSQL Database (local development) - only starts if DATABASE_URL not set
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dashboard
+      POSTGRES_USER: dashboard_user
+      POSTGRES_PASSWORD: dashboard_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dashboard_user -d dashboard"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - dashboard_network
+    profiles:
+      - postgres
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  dashboard_network:
+    driver: bridge
