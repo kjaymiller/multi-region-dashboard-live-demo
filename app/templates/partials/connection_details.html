@@ -1,0 +1,94 @@
+<!-- Connection Details Modal -->
+<div class="modal fade" id="connectionDetailsModal" tabindex="-1" style="display: block; position: static;">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Database Connection Details</h5>
+                <button type="button" class="btn-close" onclick="document.getElementById('connection-details').innerHTML='';"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="text-muted">Connection Info</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Name:</strong></td>
+                                <td>{{ connection.name }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Host:</strong></td>
+                                <td>{{ connection.host }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Port:</strong></td>
+                                <td>{{ connection.port }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Database:</strong></td>
+                                <td>{{ connection.database }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Username:</strong></td>
+                                <td>{{ connection.username }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>SSL Mode:</strong></td>
+                                <td>{{ connection.ssl_mode }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted">Location & Provider</h6>
+                        <table class="table table-sm">
+                            {% if connection.region %}
+                            <tr>
+                                <td><strong>Region:</strong></td>
+                                <td>{{ connection.region }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if connection.cloud_provider %}
+                            <tr>
+                                <td><strong>Cloud Provider:</strong></td>
+                                <td>{{ connection.cloud_provider }}</td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td>
+                                    <span class="status-indicator {% if connection.is_active %}status-success{% else %}status-error{% endif %}"></span>
+                                    {% if connection.is_active %}Active{% else %}Inactive{% endif %}
+                                </td>
+                            </tr>
+                            {% if connection.created_at %}
+                            <tr>
+                                <td><strong>Created:</strong></td>
+                                <td>{{ connection.created_at }}</td>
+                            </tr>
+                            {% endif %}
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="d-flex gap-2 mt-3">
+                    <button class="btn btn-primary"
+                            hx-post="/api/db/connections/{{ connection.id }}/test"
+                            hx-target="#test-result-{{ connection.id }}"
+                            hx-swap="innerHTML">
+                        Test Connection
+                    </button>
+                    <button class="btn btn-outline-secondary"
+                            hx-get="/api/db/connections/form"
+                            hx-target="#connection-form-container"
+                            hx-swap="innerHTML">
+                        Edit Connection
+                    </button>
+                </div>
+                
+                <div id="test-result-{{ connection.id }}" class="mt-3"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('connection-details').innerHTML='';">Close</button>
+            </div>
+        </div>
+    </div>
+</div>

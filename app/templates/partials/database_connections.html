@@ -1,0 +1,116 @@
+<!-- Database Connections Management -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0">Database Connections</h5>
+                    <small class="text-muted">Manage PostgreSQL database connections</small>
+                </div>
+                <button class="btn btn-primary btn-sm"
+                        hx-get="/api/db/connections/form"
+                        hx-target="#connection-form-container"
+                        hx-swap="innerHTML">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-lg" viewBox="0 0 16 16">
+                        <path d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+                    </svg>
+                    Add Connection
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <!-- Connection Form (hidden by default) -->
+                <div id="connection-form-container" class="p-3 border-bottom" style="display: none;"></div>
+                
+                <!-- Connections List -->
+                {% if connections %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Host:Port</th>
+                                <th>Database</th>
+                                <th>Region</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for conn in connections %}
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold">{{ conn.name }}</div>
+                                    <small class="text-muted">{{ conn.username }}@{{ conn.host }}</small>
+                                </td>
+                                <td>{{ conn.host }}:{{ conn.port }}</td>
+                                <td>{{ conn.database }}</td>
+                                <td>
+                                    {% if conn.region %}
+                                        <span class="badge bg-light text-dark">{{ conn.region }}</span>
+                                        {% if conn.cloud_provider %}
+                                        <small class="text-muted d-block">{{ conn.cloud_provider }}</small>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="status-indicator {% if conn.is_active %}status-success{% else %}status-error{% endif %}"></span>
+                                    {% if conn.is_active %}Active{% else %}Inactive{% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button class="btn btn-outline-secondary"
+                                                hx-post="/api/db/connections/{{ conn.id }}/test"
+                                                hx-target="#test-result-{{ conn.id }}"
+                                                hx-swap="innerHTML">
+                                            Test
+                                        </button>
+                                        <button class="btn btn-outline-primary"
+                                                hx-get="/api/db/connections/{{ conn.id }}"
+                                                hx-target="#connection-details"
+                                                hx-swap="innerHTML">
+                                            View
+                                        </button>
+                                        <button class="btn btn-outline-danger"
+                                                hx-delete="/api/db/connections/{{ conn.id }}"
+                                                hx-confirm="Are you sure you want to delete this database connection?"
+                                                hx-target="closest tr"
+                                                hx-swap="outerHTML">
+                                            Delete
+                                        </button>
+                                    </div>
+                                    <div id="test-result-{{ conn.id }}" class="mt-2"></div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" fill="currentColor" class="bi bi-database-fill text-muted mb-3" viewBox="0 0 16 16">
+                        <path d="M3.904 1.777C4.978 1.289 6.427 1 8 1s3.022.289 4.096.777C13.125 2.245 14 2.993 14 4s-.875 1.755-1.904 2.223C11.022 6.711 9.573 7 8 7s-3.022-.289-4.096-.777C2.875 5.755 2 5.007 2 4s.875-1.755 1.904-2.223Z"/>
+                        <path d="M2 6.161V7c0 1.007.875 1.755 1.904 2.223C4.978 9.711 6.427 10 8 10s3.022-.289 4.096-.777C13.125 8.755 14 8.007 14 7v-.839c-.457.432-1.004.751-1.49.972C11.278 7.663 9.698 8 8 8s-3.278-.337-4.51-.867c-.486-.22-1.033-.54-1.49-.972Zm3.354 4.246a3.973 3.973 0 0 0 1.646.631c.113.025.226.046.34.064v1.028c0 1.007-.875 1.755-1.904 2.223-1.074.488-2.523.777-4.096.777s-3.022-.289-4.096-.777C.875 13.255 0 12.507 0 11.5v-.839c.457.432 1.004.751 1.49.972C2.722 12.163 4.302 12.5 6 12.5c.114-.018.227-.039.34-.064a3.973 3.973 0 0 1-.646-.631Z"/>
+                        <path d="M14 11.5v-.839c-.457.432-1.004.751-1.49.972C11.278 12.163 9.698 12.5 8 12.5c-.114-.018-.227-.039-.34-.064a3.973 3.973 0 0 0 .646-.631c.113-.025.226-.046.34-.064v1.028c0 1.007-.875 1.755-1.904 2.223-1.074.488-2.523.777-4.096.777s-3.022-.289-4.096-.777C.875 13.255 0 12.507 0 11.5v-.839c.457.432 1.004.751 1.49.972C2.722 12.163 4.302 12.5 6 12.5c.114-.018.227-.039.34-.064a3.973 3.973 0 0 0 .646-.631Z"/>
+                    </svg>
+                    <h5 class="text-muted">No Database Connections</h5>
+                    <p class="text-muted mb-3">Add your first PostgreSQL database connection to get started.</p>
+                    <button class="btn btn-primary"
+                            hx-get="/api/db/connections/form"
+                            hx-target="#connection-form-container"
+                            hx-swap="innerHTML">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-lg me-2" viewBox="0 0 16 16">
+                            <path d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+                        </svg>
+                        Add Your First Connection
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Connection Details Modal -->
+<div id="connection-details"></div>
