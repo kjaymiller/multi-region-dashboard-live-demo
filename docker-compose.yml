@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # FastAPI Dashboard Application
   app:
@@ -11,12 +9,12 @@ services:
     environment:
       # Local database (default) - override with env var for remote DB
       DATABASE_URL: ${DATABASE_URL:-postgresql://dashboard_user:dashboard_password@postgres:5432/dashboard}
-      
+
       # FastAPI settings
       HOST: 0.0.0.0
       PORT: 8000
       DEBUG: "false"
-      
+
       # CORS settings (adjust for your frontend domain)
       CORS_ORIGINS: "http://localhost:8000,http://127.0.0.1:8000"
     depends_on:
@@ -61,3 +59,4 @@ volumes:
 networks:
   dashboard_network:
     driver: bridge
+

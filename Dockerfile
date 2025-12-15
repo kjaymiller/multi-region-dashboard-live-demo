@@ -13,8 +13,6 @@ RUN apt-get update && apt-get install -y \
 # Copy project files
 COPY pyproject.toml uv.lock ./
 COPY app/ ./app/
-COPY templates/ ./templates/  # If templates exist
-COPY static/ ./static/      # If static files exist
 
 # Install uv
 RUN pip install uv
