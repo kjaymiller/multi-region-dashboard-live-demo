@@ -1,0 +1,266 @@
+<!-- Multi-Region Map Section -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0">Geographic Database Map</h5>
+                    <small class="text-muted">Real-time visualization of database performance across regions</small>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-secondary"
+                            id="refresh-map-btn"
+                            onclick="refreshMap()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+                            <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+                            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+                        </svg>
+                        Refresh Map
+                    </button>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <input type="radio" class="btn-check" name="map-view" id="map-view-all" autocomplete="off" checked>
+                        <label class="btn btn-outline-primary" for="map-view-all">All</label>
+                        
+                        <input type="radio" class="btn-check" name="map-view" id="map-view-aws" autocomplete="off">
+                        <label class="btn btn-outline-primary" for="map-view-aws">AWS</label>
+                        
+                        <input type="radio" class="btn-check" name="map-view" id="map-view-gcp" autocomplete="off">
+                        <label class="btn btn-outline-primary" for="map-view-gcp">GCP</label>
+                        
+                        <input type="radio" class="btn-check" name="map-view" id="map-view-azure" autocomplete="off">
+                        <label class="btn btn-outline-primary" for="map-view-azure">Azure</label>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="map" style="height: 450px;"></div>
+                
+                <!-- Map Legend -->
+                <div class="card-footer bg-light">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <h6 class="mb-2">Cloud Providers</h6>
+                            <div class="d-flex flex-wrap gap-2">
+                                <div class="d-flex align-items-center">
+                                    <span class="cloud-legend" style="background: #ff9900;"></span>
+                                    <span>AWS</span>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <span class="cloud-legend" style="background: #4285f4;"></span>
+                                    <span>GCP</span>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <span class="cloud-legend" style="background: #0078d4;"></span>
+                                    <span>Azure</span>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <span class="cloud-legend" style="background: #ff3554;"></span>
+                                    <span>Aiven</span>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <span class="cloud-legend" style="background: #0069ff;"></span>
+                                    <span>DigitalOcean</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="mb-2">Performance Indicators</h6>
+                            <div class="d-flex flex-wrap gap-3">
+                                <div class="d-flex align-items-center">
+                                    <div class="status-indicator status-success"></div>
+                                    <span>Healthy (&lt;100ms)</span>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <div class="status-indicator" style="background: #ffc107;"></div>
+                                    <span>Slow (100-200ms)</span>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <div class="status-indicator status-error"></div>
+                                    <span>Unhealthy (&gt;200ms)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let map;
+let markers = [];
+let connectionLines = [];
+let currentFilter = 'all';
+
+// Initialize map when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    initializeMap();
+    loadMapData();
+    
+    // Setup filter listeners
+    document.querySelectorAll('input[name="map-view"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            currentFilter = this.id.replace('map-view-', '');
+            filterMapMarkers();
+        });
+    });
+});
+
+function initializeMap() {
+    // Initialize Leaflet map centered on world view
+    map = L.map('map').setView([30, 0], 2);
+    
+    // Add OpenStreetMap tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 18
+    }).addTo(map);
+}
+
+async function loadMapData() {
+    try {
+        const response = await fetch('/api/map-data');
+        const data = await response.json();
+        
+        // Clear existing markers and lines
+        clearMap();
+        
+        // Add database markers
+        data.databases.forEach(db => {
+            addDatabaseMarker(db);
+        });
+        
+        // Add connection lines
+        data.connections.forEach(conn => {
+            addConnectionLine(conn);
+        });
+        
+    } catch (error) {
+        console.error('Error loading map data:', error);
+    }
+}
+
+function addDatabaseMarker(db) {
+    const statusColor = db.status === 'healthy' ? '#28a745' : 
+                      db.status === 'slow' ? '#ffc107' : '#dc3545';
+    
+    const popupContent = `
+        <div class="map-popup">
+            <h6>${db.name}</h6>
+            <p class="mb-1"><strong>Region:</strong> ${db.region || 'Unknown'}</p>
+            <p class="mb-1"><strong>Provider:</strong> ${db.cloud_provider}</p>
+            <p class="mb-1"><strong>Host:</strong> ${db.host}:${db.port}</p>
+            <p class="mb-1"><strong>Database:</strong> ${db.database}</p>
+            <p class="mb-1">
+                <strong>Latency:</strong> 
+                ${db.latency_ms ? `<span class="latency-${getLatencyClass(db.latency_ms)}">${db.latency_ms}ms</span>` : 'Unknown'}
+            </p>
+            ${db.cache_hit_ratio ? `<p class="mb-1"><strong>Cache Hit:</strong> ${db.cache_hit_ratio}%</p>` : ''}
+            ${db.connections ? `<p class="mb-1"><strong>Connections:</strong> ${db.connections}</p>` : ''}
+        </div>
+    `;
+    
+    const marker = L.circleMarker([db.lat, db.lng], {
+        radius: 8,
+        fillColor: db.color,
+        color: statusColor,
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.8
+    }).bindPopup(popupContent);
+    
+    marker.dbData = db; // Store database data for filtering
+    marker.addTo(map);
+    markers.push(marker);
+}
+
+function addConnectionLine(conn) {
+    const coordinates = [[conn.from.lat, conn.from.lng], [conn.to.lat, conn.to.lng]];
+    
+    const line = L.polyline(coordinates, {
+        color: '#6c757d',
+        weight: 1,
+        opacity: 0.5,
+        dashArray: '5, 10'
+    });
+    
+    const popupContent = `
+        <div class="map-popup">
+            <p class="mb-1"><strong>Connection:</strong> ${conn.from.name} → ${conn.to.name}</p>
+            <p class="mb-1"><strong>Estimated Latency:</strong> ${conn.estimated_latency_ms}ms</p>
+        </div>
+    `;
+    
+    line.bindPopup(popupContent);
+    line.addTo(map);
+    connectionLines.push(line);
+}
+
+function clearMap() {
+    markers.forEach(marker => map.removeLayer(marker));
+    connectionLines.forEach(line => map.removeLayer(line));
+    markers = [];
+    connectionLines = [];
+}
+
+function filterMapMarkers() {
+    markers.forEach(marker => {
+        const shouldShow = currentFilter === 'all' || 
+                          marker.dbData.cloud_provider.toLowerCase().includes(currentFilter);
+        
+        if (shouldShow) {
+            marker.addTo(map);
+        } else {
+            map.removeLayer(marker);
+        }
+    });
+    
+    // Also filter connection lines
+    connectionLines.forEach(line => map.removeLayer(line));
+    if (currentFilter === 'all') {
+        connectionLines.forEach(line => line.addTo(map));
+    }
+}
+
+function getLatencyClass(latencyMs) {
+    if (latencyMs < 100) return 'good';
+    if (latencyMs < 200) return 'medium';
+    return 'bad';
+}
+
+function refreshMap() {
+    const btn = document.getElementById('refresh-map-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Loading...';
+    
+    loadMapData().finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+            </svg>
+            Refresh Map
+        `;
+    });
+}
+</script>
+
+<style>
+.cloud-legend {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 4px;
+}
+
+.map-popup {
+    min-width: 200px;
+}
+
+.latency-good { color: #28a745; }
+.latency-medium { color: #ffc107; }
+.latency-bad { color: #dc3545; }
+</style>

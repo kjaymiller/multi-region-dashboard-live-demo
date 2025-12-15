@@ -53,6 +53,15 @@
     <!-- All Database Result -->
     <div id="all-database-result" class="mb-4"></div>
 
+    <!-- Database Connections Management -->
+    <div id="database-connections-container"
+         hx-get="/api/db/connections"
+         hx-trigger="load"
+         hx-swap="innerHTML"></div>
+
+    <!-- Geographic Map View -->
+    {% include "partials/map_view.html" %}
+
     <!-- Auto-refresh Summary -->
     <div class="row mb-4">
         <div class="col-12">
