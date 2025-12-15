@@ -1,0 +1,182 @@
+<!-- Alpine.js Integration Demo - Enhanced Map Filtering -->
+<div x-data="{ 
+    currentFilter: 'all',
+    databases: [],
+    connections: [],
+    loading: false,
+    
+    async loadMapData() {
+        this.loading = true;
+        try {
+            const response = await fetch('/api/map-data');
+            const data = await response.json();
+            this.databases = data.databases;
+            this.connections = data.connections;
+            
+            // Update Leaflet map with new data
+            this.updateMap();
+        } catch (error) {
+            console.error('Error loading map data:', error);
+        } finally {
+            this.loading = false;
+        }
+    },
+    
+    updateMap() {
+        // Clear existing markers and lines
+        clearMap();
+        
+        // Filter and add database markers
+        const filteredDatabases = this.databases.filter(db => 
+            this.currentFilter === 'all' || 
+            db.cloud_provider.toLowerCase().includes(this.currentFilter)
+        );
+        
+        filteredDatabases.forEach(db => addDatabaseMarker(db));
+        
+        // Add connection lines for all view
+        if (this.currentFilter === 'all') {
+            this.connections.forEach(conn => addConnectionLine(conn));
+        }
+    },
+    
+    init() {
+        // Initialize map when component mounts
+        this.$nextTick(() => {
+            initializeMap();
+            this.loadMapData();
+        });
+    }
+}" x-init="init()">
+    
+    <!-- Enhanced Controls with Alpine.js -->
+    <div class="d-flex gap-2 align-items-center mb-3">
+        <div class="btn-group btn-group-sm" role="group">
+            <template x-for="filter in [
+                {id: 'all', label: 'All', icon: '🌍'},
+                {id: 'aws', label: 'AWS', icon: '☁️'},
+                {id: 'gcp', label: 'GCP', icon: '🔧'},
+                {id: 'azure', label: 'Azure', icon: '💙'}
+            ]" :key="filter.id">
+                <input type="radio" 
+                       class="btn-check" 
+                       :name="'map-view'" 
+                       :id="`map-view-${filter.id}`"
+                       x-model="currentFilter" 
+                       :value="filter.id">
+                <label class="btn btn-outline-primary" 
+                       :for="`map-view-${filter.id}`"
+                       :class="currentFilter === filter.id ? 'active' : ''">
+                    <span x-text="filter.icon"></span>
+                    <span x-text="filter.label"></span>
+                </label>
+            </template>
+        </div>
+        
+        <button class="btn btn-sm btn-outline-secondary"
+                @click="loadMapData()"
+                :disabled="loading">
+            <template x-if="!loading">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+                    <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+                </svg>
+                Refresh Map
+            </template>
+            <template x-if="loading">
+                <span class="spinner-border spinner-border-sm me-1"></span>
+                Loading...
+            </template>
+        </button>
+        
+        <!-- Real-time Status Indicator -->
+        <div class="d-flex align-items-center">
+            <span class="status-indicator" 
+                  :class="loading ? 'status-warning' : 'status-success'"></span>
+            <span x-text="loading ? 'Updating...' : 'Live'"></span>
+        </div>
+    </div>
+    
+    <!-- Database Statistics -->
+    <div class="row mb-3" x-show="!loading">
+        <div class="col-md-12">
+            <div class="alert alert-info mb-0">
+                <h6 class="mb-2">Database Overview</h6>
+                <div class="row">
+                    <div class="col-md-3">
+                        <strong>Total Databases:</strong>
+                        <span x-text="databases.length"></span>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Active:</strong>
+                        <span x-text="databases.filter(db => db.status === 'healthy').length"></span>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Issues:</strong>
+                        <span x-text="databases.filter(db => db.status !== 'healthy').length"></span>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Avg Latency:</strong>
+                        <span x-text="databases.filter(db => db.latency_ms).length > 0 ? 
+                            Math.round(databases.filter(db => db.latency_ms).reduce((sum, db) => sum + db.latency_ms, 0) / 
+                            databases.filter(db => db.latency_ms).length) + 'ms' : 'N/A'"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Map Container -->
+    <div id="map-alpine" style="height: 400px;" x-show="!loading"></div>
+    
+    <!-- Loading State -->
+    <div class="d-flex justify-content-center align-items-center" 
+         style="height: 400px;" 
+         x-show="loading"
+         x-transition.opacity.duration.300ms>
+        <div class="text-center">
+            <div class="spinner-border text-primary mb-3" role="status"></div>
+            <p>Loading map data...</p>
+        </div>
+    </div>
+    
+    <!-- Filter Results Summary -->
+    <div class="mt-3" x-show="!loading && currentFilter !== 'all'">
+        <div class="alert alert-light">
+            <small>
+                Showing <strong x-text="databases.filter(db => 
+                    db.cloud_provider.toLowerCase().includes(currentFilter)).length"></strong> 
+                databases for <strong x-text="currentFilter.toUpperCase()"></strong> 
+                out of <strong x-text="databases.length"></strong> total
+            </small>
+        </div>
+    </div>
+</div>
+
+<style>
+[x-cloak] { display: none !important; }
+
+/* Alpine.js specific styles */
+.alpine-transition {
+    transition: all 0.3s ease;
+}
+
+.btn-check:checked + .btn {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 4px;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+</style>
