@@ -1,13 +1,16 @@
+{% set connection_result = results | selectattr('test_type', 'equalto', 'connection') | first %}
+{% set latency_result = results | selectattr('test_type', 'equalto', 'latency') | first %}
+{% set health_result = results | selectattr('test_type', 'equalto', 'health') | first %}
+
 <div class="row g-3">
-    {% for result in results %}
-    <div class="col-md-4">
+    <div class="col-12">
         <div class="d-flex align-items-center p-2 bg-white rounded">
-            <span class="status-indicator {% if result.success %}status-success{% else %}status-error{% endif %}"></span>
+            <span class="status-indicator {% if connection_result.success %}status-success{% else %}status-error{% endif %}"></span>
             <div class="flex-grow-1">
                 <strong>Database</strong>
-                {% if result.success %}
-                <span class="float-end {% if result.latency_ms < 50 %}latency-good{% elif result.latency_ms < 150 %}latency-medium{% else %}latency-bad{% endif %}">
-                    {{ result.latency_ms }}ms
+                {% if latency_result and latency_result.success %}
+                <span class="float-end {% if latency_result.latency_ms < 50 %}latency-good{% elif latency_result.latency_ms < 150 %}latency-medium{% else %}latency-bad{% endif %}">
+                    {{ latency_result.latency_ms }}ms
                 </span>
                 {% else %}
                 <span class="float-end text-danger">Error</span>
@@ -15,14 +18,16 @@
             </div>
         </div>
     </div>
-    {% endfor %}
 </div>
 
 {% if results %}
 <div class="text-end mt-2">
     <small class="text-muted">
-        Best: <strong>Database</strong>
-        ({{ results[0].latency_ms if results[0].success else 'N/A' }}ms)
+        Connection: {% if connection_result.success %}✓{% else %}✗{% endif %} | 
+        Health: {% if health_result and health_result.success %}✓{% else %}✗{% endif %}
+        {% if latency_result and latency_result.success %}
+        | Latency: {{ latency_result.latency_ms }}ms
+        {% endif %}
     </small>
 </div>
 {% endif %}
