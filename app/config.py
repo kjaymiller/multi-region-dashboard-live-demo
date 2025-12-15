@@ -63,5 +63,4 @@ def get_dsn(region_id: str) -> str | None:
     return region.dsn if region else None
 
 
-# LaunchDarkly configuration
-LAUNCHDARKLY_SDK_KEY = os.getenv("LAUNCHDARKLY_SDK_KEY", "")
+

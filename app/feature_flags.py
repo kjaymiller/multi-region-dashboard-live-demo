@@ -1,65 +1,24 @@
-"""LaunchDarkly feature flag integration."""
+"""Simple feature flag implementation without external dependencies."""
 
-import ldclient
-from ldclient import Context
-from ldclient.config import Config
-
-from app.config import LAUNCHDARKLY_SDK_KEY
-
-# Initialize LaunchDarkly client
-_ld_client: ldclient.LDClient | None = None
-
-
-def init_launchdarkly() -> None:
-    """Initialize the LaunchDarkly client."""
-    global _ld_client
-    if LAUNCHDARKLY_SDK_KEY:
-        ldclient.set_config(Config(LAUNCHDARKLY_SDK_KEY))
-        _ld_client = ldclient.get()
-
-
-def close_launchdarkly() -> None:
-    """Close the LaunchDarkly client connection."""
-    global _ld_client
-    if _ld_client:
-        _ld_client.close()
-        _ld_client = None
-
-
-def get_user_context(user_key: str, **attributes) -> Context:
-    """Create a LaunchDarkly context for a user."""
-    builder = Context.builder(user_key)
-    for key, value in attributes.items():
-        builder.set(key, value)
-    return builder.build()
+from app.config import REGIONS
 
 
 def is_region_enabled(region_id: str, user_key: str = "anonymous") -> bool:
     """Check if a specific region is enabled for the user."""
-    if not _ld_client:
-        return True  # Default to enabled if LaunchDarkly is not configured
-
-    context = get_user_context(user_key)
-    flag_key = f"region-{region_id}-enabled"
-    return _ld_client.variation(flag_key, context, True)
+    # All regions enabled by default
+    return region_id in REGIONS
 
 
 def is_feature_enabled(feature_key: str, user_key: str = "anonymous") -> bool:
     """Check if a feature is enabled for the user."""
-    if not _ld_client:
-        return True  # Default to enabled if LaunchDarkly is not configured
-
-    context = get_user_context(user_key)
-    return _ld_client.variation(feature_key, context, True)
+    # All features enabled by default
+    return True
 
 
 def get_refresh_interval(user_key: str = "anonymous") -> int:
     """Get the dashboard auto-refresh interval in seconds."""
-    if not _ld_client:
-        return 30  # Default 30 seconds
-
-    context = get_user_context(user_key)
-    return _ld_client.variation("dashboard-refresh-seconds", context, 30)
+    # Default 30 seconds
+    return 30
 
 
 def is_health_checks_enabled(user_key: str = "anonymous") -> bool:
@@ -94,33 +53,18 @@ def track_chatbot_metric(
     **custom_attributes
 ) -> None:
     """
-    Track a chatbot metric to LaunchDarkly.
+    Track a chatbot metric (no-op without LaunchDarkly).
     
     Args:
-        event_key: The event key defined in LaunchDarkly (e.g., 'chatbot.connection.status')
+        event_key: The event key (e.g., 'chatbot.connection.status')
         user_key: User identifier for the context
-        metric_value: Numeric value for the metric (required for Value/Size metrics)
-        **custom_attributes: Additional attributes to include (e.g., status, errorType, etc.)
+        metric_value: Numeric value for the metric
+        **custom_attributes: Additional attributes to include
     """
-    if not _ld_client:
-        return  # Skip tracking if LaunchDarkly is not configured
-
-    context = get_user_context(user_key, **custom_attributes)
-    
-    if metric_value is not None:
-        # Track event with numeric value (for Value/Size metrics)
-        _ld_client.track(event_key, context, metric_value)
-    else:
-        # Track event without value (for Count or Binary/Occurrence metrics)
-        _ld_client.track(event_key, context)
+    # No-op without LaunchDarkly
+    pass
 
 
 def get_enabled_regions(user_key: str = "anonymous") -> list[str]:
     """Get list of enabled region IDs for a user."""
-    from app.config import REGIONS
-
-    enabled = []
-    for region_id in REGIONS.keys():
-        if is_region_enabled(region_id, user_key):
-            enabled.append(region_id)
-    return enabled
+    return list(REGIONS.keys())

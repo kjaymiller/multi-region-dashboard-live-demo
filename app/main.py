@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.feature_flags import init_launchdarkly, close_launchdarkly
+
 from app.routers import pages, api
 
 
@@ -14,10 +14,8 @@ from app.routers import pages, api
 async def lifespan(app: FastAPI):
     """Manage application lifespan - startup and shutdown."""
     # Startup
-    init_launchdarkly()
     yield
     # Shutdown
-    close_launchdarkly()
 
 
 app = FastAPI(

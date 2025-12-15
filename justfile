@@ -70,7 +70,7 @@ info:
     @uv --version
     @echo ""
     @echo "Installed packages:"
-    @uv pip list | grep -E "(fastapi|uvicorn|asyncpg|jinja2|python-dotenv|launchdarkly)"
+    @uv pip list | grep -E "(fastapi|uvicorn|asyncpg|jinja2|python-dotenv)"
 
 # Freeze current dependencies
 freeze:

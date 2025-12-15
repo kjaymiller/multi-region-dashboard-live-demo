@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 
-from app.config import get_all_regions, LAUNCHDARKLY_CLIENT_SIDE_ID
+from app.config import get_all_regions
 from app.feature_flags import (
     get_enabled_regions,
     get_refresh_interval,
@@ -52,7 +52,7 @@ async def dashboard(request: Request):
             "load_testing_enabled": load_testing_enabled,
             "chatbot_enabled": chatbot_enabled,
             "refresh_table_button_enabled": refresh_table_button_enabled,
-            "launchdarkly_client_side_id": LAUNCHDARKLY_CLIENT_SIDE_ID,
+
             "user_key": user_key,
         },
     )
