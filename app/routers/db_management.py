@@ -111,11 +111,14 @@ async def create_connection(request: Request, conn_data: DatabaseCreateRequest):
     test_result = db_manager.test_connection(connection)
 
     if not test_result.get("success", False):
-        # Return test failure HTML
+        # Return test failure HTML but still refresh the list
         return templates.TemplateResponse(
             "partials/connection_result.html",
             {"request": request, "result": test_result},
-            {"HX-Trigger": "connection-test-failed"}
+            {
+                "HX-Trigger": "connection-test-failed",
+                "HX-Trigger-After-Swap": "htmx.trigger('#database-connections-container', 'load'); document.getElementById('connection-form-container').style.display='none';"
+            }
         )
 
     # Return success HTML
