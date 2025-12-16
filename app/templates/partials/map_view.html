@@ -82,6 +82,10 @@
                                     <div style="background: #007bff; border: 2px solid white; border-radius: 50%; width: 12px; height: 12px;"></div>
                                     <span>Your Location</span>
                                 </div>
+                                <div class="d-flex align-items-center">
+                                    <div style="width: 30px; height: 2px; background: linear-gradient(to right, #28a745, #ffc107, #dc3545); opacity: 0.4;"></div>
+                                    <span class="ms-1">User Connections</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -95,7 +99,9 @@
 let map;
 let markers = [];
 let connectionLines = [];
+let userConnectionLines = [];
 let currentFilter = 'all';
+let userLocationCoords = null;
 
 // Initialize map when page loads
 document.addEventListener('DOMContentLoaded', function() {
@@ -127,23 +133,30 @@ async function loadMapData() {
         // Fetch map data
         const mapResponse = await fetch('/api/map-data');
         const data = await mapResponse.json();
-        
+
         // Clear existing markers and lines
         clearMap();
-        
+
         // Try to get user location from browser first
         await getUserLocation();
-        
+
         // Add database markers
         data.databases.forEach(db => {
             addDatabaseMarker(db);
         });
-        
-        // Add connection lines
+
+        // Draw lines from user to each database
+        if (userLocationCoords) {
+            data.databases.forEach(db => {
+                addUserToDatabaseLine(db);
+            });
+        }
+
+        // Add connection lines between databases
         data.connections.forEach(conn => {
             addConnectionLine(conn);
         });
-        
+
     } catch (error) {
         console.error('Error loading map data:', error);
     }
@@ -230,14 +243,17 @@ function addDatabaseMarker(db) {
 }
 
 function addUserLocationMarker(userLocation) {
-    const accuracyText = userLocation.accuracy ? 
+    // Store user location coordinates for drawing lines
+    userLocationCoords = { lat: userLocation.lat, lon: userLocation.lon };
+
+    const accuracyText = userLocation.accuracy ?
         `<p class="mb-1"><strong>Accuracy:</strong> ±${Math.round(userLocation.accuracy)}m</p>` : '';
-    
-    const locationType = userLocation.ip === 'Browser' ? 
+
+    const locationType = userLocation.ip === 'Browser' ?
         '<p class="mb-1 text-success"><em>Precise GPS location</em></p>' :
         userLocation.is_local ? '<p class="mb-1 text-muted"><em>Default location (local development)</em></p>' :
         '<p class="mb-1 text-info"><em>IP-based location</em></p>';
-    
+
     const popupContent = `
         <div class="map-popup">
             <h6><strong>Your Location</strong></h6>
@@ -248,21 +264,21 @@ function addUserLocationMarker(userLocation) {
             ${locationType}
         </div>
     `;
-    
+
     // Create a distinctive marker for user location with animation
     const userIcon = L.divIcon({
         html: '<div style="background: #007bff; border: 3px solid white; border-radius: 50%; width: 16px; height: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); animation: pulse 2s infinite;"></div>',
         iconSize: [16, 16],
         className: 'user-location-marker'
     });
-    
+
     const marker = L.marker([userLocation.lat, userLocation.lon], {
         icon: userIcon
     }).bindPopup(popupContent);
-    
+
     marker.addTo(map);
     markers.push(marker);
-    
+
     // Add a circle to show accuracy if available
     if (userLocation.accuracy) {
         const accuracyCircle = L.circle([userLocation.lat, userLocation.lon], {
@@ -276,33 +292,85 @@ function addUserLocationMarker(userLocation) {
     }
 }
 
+function addUserToDatabaseLine(db) {
+    if (!userLocationCoords) return;
+
+    const coordinates = [[userLocationCoords.lat, userLocationCoords.lon], [db.lat, db.lng]];
+
+    // Calculate approximate distance and latency
+    const distance = calculateDistance(
+        userLocationCoords.lat, userLocationCoords.lon,
+        db.lat, db.lng
+    );
+    const estimatedLatency = Math.round(distance / 200); // Rough estimate: ~200km per ms
+
+    // Color based on latency
+    let lineColor = '#28a745'; // green for close
+    if (estimatedLatency > 100) lineColor = '#ffc107'; // yellow for medium
+    if (estimatedLatency > 200) lineColor = '#dc3545'; // red for far
+
+    const line = L.polyline(coordinates, {
+        color: lineColor,
+        weight: 2,
+        opacity: 0.4,
+        dashArray: '5, 5'
+    });
+
+    const popupContent = `
+        <div class="map-popup">
+            <p class="mb-1"><strong>Connection:</strong> You → ${db.name}</p>
+            <p class="mb-1"><strong>Distance:</strong> ~${Math.round(distance)} km</p>
+            <p class="mb-1"><strong>Estimated Latency:</strong> ~${estimatedLatency}ms</p>
+            ${db.latency_ms ? `<p class="mb-1"><strong>Actual Latency:</strong> ${db.latency_ms}ms</p>` : ''}
+        </div>
+    `;
+
+    line.bindPopup(popupContent);
+    line.addTo(map);
+    userConnectionLines.push(line);
+}
+
 function addConnectionLine(conn) {
     const coordinates = [[conn.from.lat, conn.from.lng], [conn.to.lat, conn.to.lng]];
-    
+
     const line = L.polyline(coordinates, {
         color: '#6c757d',
         weight: 1,
-        opacity: 0.5,
+        opacity: 0.3,
         dashArray: '5, 10'
     });
-    
+
     const popupContent = `
         <div class="map-popup">
             <p class="mb-1"><strong>Connection:</strong> ${conn.from.name} → ${conn.to.name}</p>
             <p class="mb-1"><strong>Estimated Latency:</strong> ${conn.estimated_latency_ms}ms</p>
         </div>
     `;
-    
+
     line.bindPopup(popupContent);
     line.addTo(map);
     connectionLines.push(line);
 }
 
+// Haversine formula to calculate distance between two coordinates
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
 function clearMap() {
     markers.forEach(marker => map.removeLayer(marker));
     connectionLines.forEach(line => map.removeLayer(line));
+    userConnectionLines.forEach(line => map.removeLayer(line));
     markers = [];
     connectionLines = [];
+    userConnectionLines = [];
 }
 
 function filterMapMarkers() {
