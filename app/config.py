@@ -11,6 +11,7 @@ load_dotenv()
 @dataclass
 class DatabaseConfig:
     """Configuration for the PostgreSQL database."""
+
     name: str
     env_key: str
 

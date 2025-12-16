@@ -37,7 +37,9 @@ When answering questions:
             metric = check.get("metric_value")
 
             if success and metric:
-                prompt += f"- {region}: {check_type} - {metric:.2f} {check.get('metric_unit', '')}\n"
+                prompt += (
+                    f"- {region}: {check_type} - {metric:.2f} {check.get('metric_unit', '')}\n"
+                )
             elif not success:
                 prompt += f"- {region}: {check_type} - FAILED\n"
 
@@ -45,9 +47,7 @@ When answering questions:
 
 
 async def chat_with_ollama(
-    message: str,
-    model: str = DEFAULT_MODEL,
-    context: str = None
+    message: str, model: str = DEFAULT_MODEL, context: str = None
 ) -> AsyncGenerator[str, None]:
     """Stream chat responses from Ollama."""
 
@@ -55,26 +55,16 @@ async def chat_with_ollama(
 
     # Add system prompt if context provided
     if context:
-        messages.append({
-            "role": "system",
-            "content": context
-        })
+        messages.append({"role": "system", "content": context})
 
     # Add user message
-    messages.append({
-        "role": "user",
-        "content": message
-    })
+    messages.append({"role": "user", "content": message})
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         async with client.stream(
             "POST",
             f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": model,
-                "messages": messages,
-                "stream": True
-            }
+            json={"model": model, "messages": messages, "stream": True},
         ) as response:
             async for line in response.aiter_lines():
                 if line.strip():
@@ -89,27 +79,18 @@ async def chat_with_ollama(
 
 
 async def get_chat_response(
-    message: str,
-    recent_checks: list[dict] = None,
-    model: str = DEFAULT_MODEL
+    message: str, recent_checks: list[dict] = None, model: str = DEFAULT_MODEL
 ) -> str:
     """Get a complete chat response from Ollama (non-streaming)."""
 
     system_prompt = get_system_prompt(recent_checks)
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": message}
-    ]
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
             f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": model,
-                "messages": messages,
-                "stream": False
-            }
+            json={"model": model, "messages": messages, "stream": False},
         )
 
         if response.status_code == 200:

@@ -12,8 +12,16 @@ from app.config import get_dsn
 
 @asynccontextmanager
 async def get_connection(dsn: str) -> AsyncGenerator[asyncpg.Connection, None]:
-    """Create an async PostgreSQL connection with SSL required for Aiven."""
-    conn = await asyncpg.connect(dsn=dsn, ssl="require")
+    """Create an async PostgreSQL connection with conditional SSL."""
+    # Use SSL for remote connections, disable for local development
+    ssl_mode = (
+        "require"
+        if not any(
+            local_host in dsn.lower() for local_host in ["localhost", "127.0.0.1", "postgres:"]
+        )
+        else None
+    )
+    conn = await asyncpg.connect(dsn=dsn, ssl=ssl_mode)
     try:
         yield conn
     finally:
@@ -157,7 +165,9 @@ async def get_health_metrics() -> dict:
                     WHERE datname = current_database()
                     """
                 )
-                result["cache_hit_ratio"] = float(cache_result["cache_hit_ratio"]) if cache_result["cache_hit_ratio"] else 0
+                result["cache_hit_ratio"] = (
+                    float(cache_result["cache_hit_ratio"]) if cache_result["cache_hit_ratio"] else 0
+                )
             except Exception as e:
                 error_msg = str(e)
                 if _is_privilege_error(error_msg):
@@ -234,16 +244,23 @@ async def get_health_metrics() -> dict:
                         pg_stat_statements = []
                         for row in pg_stat_result:
                             try:
-                                pg_stat_statements.append({
-                                    "query": row["query_preview"] + ("..." if len(row["query_preview"]) >= 150 else ""),
-                                    "calls": int(row["calls"]),
-                                    "total_time_ms": round(float(row["total_exec_time"]), 2),
-                                    "mean_time_ms": round(float(row["mean_exec_time"]), 2),
-                                    "max_time_ms": round(float(row["max_exec_time"]), 2),
-                                    "cache_hit_pct": round(float(row["cache_hit_pct"]), 2) if row["cache_hit_pct"] else None,
-                                    "shared_blks_hit": int(row["shared_blks_hit"]),
-                                    "shared_blks_read": int(row["shared_blks_read"]),
-                                })
+                                pg_stat_statements.append(
+                                    {
+                                        "query": row["query_preview"]
+                                        + ("..." if len(row["query_preview"]) >= 150 else ""),
+                                        "calls": int(row["calls"]),
+                                        "total_time_ms": round(float(row["total_exec_time"]), 2),
+                                        "mean_time_ms": round(float(row["mean_exec_time"]), 2),
+                                        "max_time_ms": round(float(row["max_exec_time"]), 2),
+                                        "cache_hit_pct": (
+                                            round(float(row["cache_hit_pct"]), 2)
+                                            if row["cache_hit_pct"]
+                                            else None
+                                        ),
+                                        "shared_blks_hit": int(row["shared_blks_hit"]),
+                                        "shared_blks_read": int(row["shared_blks_read"]),
+                                    }
+                                )
                             except Exception:
                                 # Skip rows with privilege issues
                                 continue
@@ -269,9 +286,16 @@ async def get_health_metrics() -> dict:
                 result["pg_stat_statements_available"] = False
 
         # Only mark as failed if we couldn't get any data at all
-        if all(v is None for k, v in result.items() if k not in ["success", "warnings", "pg_stat_statements", "pg_stat_statements_available"]):
+        if all(
+            v is None
+            for k, v in result.items()
+            if k
+            not in ["success", "warnings", "pg_stat_statements", "pg_stat_statements_available"]
+        ):
             result["success"] = False
-            result["error"] = "Unable to retrieve any health metrics. " + "; ".join(result["warnings"])
+            result["error"] = "Unable to retrieve any health metrics. " + "; ".join(
+                result["warnings"]
+            )
 
         return result
     except Exception as e:
@@ -299,7 +323,7 @@ async def save_connection_check(result: dict, user_key: str | None = None) -> No
                     pg_version, error_message, user_key
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
-'database',
+                "database",
                 result.get("success", False),
                 result.get("latency_ms"),
                 result.get("server_ip"),
@@ -311,6 +335,7 @@ async def save_connection_check(result: dict, user_key: str | None = None) -> No
     except Exception as e:
         # Log error but don't fail request (table might not exist yet)
         import logging
+
         logging.warning(f"Failed to save connection check: {e}")
 
 
@@ -324,6 +349,7 @@ async def save_latency_check(result: dict, user_key: str | None = None) -> None:
         async with get_connection(dsn) as conn:
             # Convert timings list to JSON
             import json
+
             timings_json = json.dumps(result.get("timings", []))
 
             await conn.execute(
@@ -333,7 +359,7 @@ async def save_latency_check(result: dict, user_key: str | None = None) -> None:
                     timings, error_message, user_key
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 """,
-                'database',
+                "database",
                 result.get("success", False),
                 result.get("iterations"),
                 result.get("min_ms"),
@@ -345,6 +371,7 @@ async def save_latency_check(result: dict, user_key: str | None = None) -> None:
             )
     except Exception as e:
         import logging
+
         logging.warning(f"Failed to save latency check: {e}")
 
 
@@ -363,7 +390,7 @@ async def save_load_test_check(result: dict, user_key: str | None = None) -> Non
                     avg_ms, total_time_ms, queries_per_second, error_message, user_key
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 """,
-                'database',
+                "database",
                 result.get("success", False),
                 result.get("concurrent"),
                 result.get("min_ms"),
@@ -376,6 +403,7 @@ async def save_load_test_check(result: dict, user_key: str | None = None) -> Non
             )
     except Exception as e:
         import logging
+
         logging.warning(f"Failed to save load test check: {e}")
 
 
@@ -389,6 +417,7 @@ async def save_health_metrics_check(result: dict, user_key: str | None = None) -
         async with get_connection(dsn) as conn:
             # Convert warnings list to JSON
             import json
+
             warnings_json = json.dumps(result.get("warnings", []))
 
             await conn.execute(
@@ -399,7 +428,7 @@ async def save_health_metrics_check(result: dict, user_key: str | None = None) -
                     pg_stat_statements_available, warnings, error_message, user_key
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 """,
-                'database',
+                "database",
                 result.get("success", False),
                 result.get("cache_hit_ratio"),
                 result.get("active_connections"),
@@ -413,6 +442,7 @@ async def save_health_metrics_check(result: dict, user_key: str | None = None) -
             )
     except Exception as e:
         import logging
+
         logging.warning(f"Failed to save health metrics check: {e}")
 
 
@@ -454,7 +484,7 @@ async def get_connection_check_summary() -> dict:
                 SELECT * FROM recent_connection_checks
                 WHERE region_id = $1
                 """,
-                'database',
+                "database",
             )
 
             return dict(row) if row else {}

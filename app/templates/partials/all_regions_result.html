@@ -49,7 +49,7 @@
                         {% if result.success %}
                         <small class="text-muted">{{ result.server_ip or 'N/A' }}</small>
                         {% else %}
-                        <small class="text-danger">{{ result.error[:30] }}...</small>
+                        <small class="text-danger">{{ result.get('error', 'Unknown error')[:30] }}...</small>
                         {% endif %}
                     </td>
                 </tr>
