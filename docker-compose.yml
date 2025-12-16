@@ -7,8 +7,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Local database (default) - override with env var for remote DB
-      DATABASE_URL: ${DATABASE_URL:-postgresql://dashboard_user:dashboard_password@postgres:5432/dashboard}
+      # Docker database connection - always use postgres service name in Docker
+      DATABASE_URL: postgresql://dashboard_user:dashboard_password@postgres:5432/dashboard
+      
+      # Override any .env file that might set DATABASE_URL to localhost
 
       # FastAPI settings
       HOST: 0.0.0.0
@@ -37,7 +39,7 @@ services:
     image: timescale/timescaledb:latest-pg15
     container_name: postgres_db
     restart: unless-stopped
-    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
+    command: ["postgres", "-c", "shared_preload_libraries=timescaledb,pg_stat_statements", "-c", "pg_stat_statements.track=all"]
     environment:
       POSTGRES_DB: dashboard
       POSTGRES_USER: dashboard_user
