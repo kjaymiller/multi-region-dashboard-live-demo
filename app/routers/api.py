@@ -114,9 +114,35 @@ async def chat(request: Request):
     # Get recent checks for context
     recent_checks = await get_all_recent_checks(limit=10)
 
+    # Get expensive queries for enhanced analysis
+    expensive_queries = await get_expensive_queries()
+
+    # Get database connections for context and format them
+    connections = await db_manager.get_all_connections()
+
+    # Add database context to recent checks
+    if connections:
+        db_context = {
+            "check_type": "database_info",
+            "region_id": "connections",
+            "success": True,
+            "metric_value": len(connections),
+            "metric_unit": "connections",
+            "connections": [
+                {
+                    "name": conn.name,
+                    "region": conn.region,
+                    "cloud_provider": conn.cloud_provider,
+                    "host": f"{conn.host}:{conn.port}",
+                }
+                for conn in connections[:5]
+            ],
+        }
+        recent_checks.append(db_context)
+
     # Get response from Ollama
     try:
-        response = await get_chat_response(message, recent_checks)
+        response = await get_chat_response(message, recent_checks, expensive_queries)
         return JSONResponse(content={"response": response})
     except Exception as e:
         return JSONResponse(content={"error": f"Chat service error: {str(e)}"}, status_code=500)
