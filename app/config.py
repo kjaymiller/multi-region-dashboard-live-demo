@@ -24,16 +24,16 @@ class DatabaseConfig:
 @dataclass
 class ChatConfig:
     """Configuration for AI chat functionality."""
-    
+
     enabled: bool = True
     base_url: str = "http://localhost:11434"
-    model: str = "llama3.2:latest"
-    
+    model: str = "gpt-oss"
+
     def __post_init__(self) -> None:
         """Load configuration from environment variables."""
         self.enabled = os.getenv("CHAT_ENABLED", "true").lower() == "true"
         self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        self.model = os.getenv("OLLAMA_MODEL", "llama3.2:latest")
+        self.model = os.getenv("OLLAMA_MODEL", "gpt-oss")
 
 
 # Single database configuration

@@ -6,29 +6,150 @@ from collections.abc import AsyncGenerator
 import httpx
 
 from .config import get_chat_config
+from .database import get_connection, get_dsn
 
 
-def get_system_prompt(recent_checks: list[dict] | None = None) -> str:
+async def get_expensive_queries() -> list[dict]:
+    """Get expensive queries from last 30 days, prioritized by mean execution time."""
+    dsn = get_dsn()
+    if not dsn:
+        return []
+
+    try:
+        async with get_connection(dsn) as conn:
+            # Check if pg_stat_statements extension exists
+            ext_check = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements')"
+            )
+
+            if not ext_check:
+                return []
+
+            # Get expensive queries from last 30 days (no query text for privacy)
+            rows = await conn.fetch(
+                """
+                SELECT
+                    queryid,
+                    calls,
+                    ROUND(total_exec_time::numeric, 2) as total_time_ms,
+                    ROUND(mean_exec_time::numeric, 2) as mean_time_ms,
+                    ROUND(max_exec_time::numeric, 2) as max_time_ms,
+                    ROUND(stddev_exec_time::numeric, 2) as stddev_time_ms,
+                    ROUND((100.0 * shared_blks_hit / NULLIF(shared_blks_hit + shared_blks_read, 0))::numeric, 2) as cache_hit_pct,
+                    shared_blks_hit,
+                    shared_blks_read,
+                    local_blks_hit,
+                    local_blks_read,
+                    temp_blks_read,
+                    temp_blks_written
+                FROM pg_stat_statements
+                WHERE calls >= 1
+                  AND mean_exec_time > 1
+                  AND query NOT LIKE '%pg_stat_statements%'
+                  AND query NOT LIKE '%pg_catalog%'
+                  AND query NOT LIKE '%<insufficient privilege>%'
+                  AND queryid IS NOT NULL
+                ORDER BY mean_exec_time DESC
+                LIMIT 15
+                """
+            )
+
+            expensive_queries = []
+            for i, row in enumerate(rows, 1):
+                expensive_queries.append(
+                    {
+                        "rank": i,
+                        "queryid": str(row["queryid"]) if row["queryid"] else f"query_{i}",
+                        "calls": int(row["calls"]),
+                        "total_time_ms": float(row["total_time_ms"]),
+                        "mean_time_ms": float(row["mean_time_ms"]),
+                        "max_time_ms": float(row["max_time_ms"]),
+                        "stddev_time_ms": (
+                            float(row["stddev_time_ms"]) if row["stddev_time_ms"] else 0
+                        ),
+                        "cache_hit_pct": float(row["cache_hit_pct"]) if row["cache_hit_pct"] else 0,
+                        "shared_blks_hit": int(row["shared_blks_hit"]),
+                        "shared_blks_read": int(row["shared_blks_read"]),
+                        "local_blks_hit": int(row["local_blks_hit"]),
+                        "local_blks_read": int(row["local_blks_read"]),
+                        "temp_blks_read": int(row["temp_blks_read"]),
+                        "temp_blks_written": int(row["temp_blks_written"]),
+                    }
+                )
+
+            return expensive_queries
+    except Exception:
+        return []
+
+
+def format_expensive_queries(queries: list[dict]) -> str:
+    """Format expensive queries for display in system prompt."""
+    if not queries:
+        return "No expensive query data available."
+
+    formatted = "🔍 Top Expensive Queries (Last 30 Days, by Mean Execution Time):\n\n"
+
+    for query in queries[:10]:  # Show top 10
+        formatted += (
+            f"📊 Query #{query['rank']}:\n"
+            f"   ⏱️  Mean Time: {query['mean_time_ms']:.2f}ms\n"
+            f"   📈 Calls: {query['calls']:,}\n"
+            f"   ⚡ Max Time: {query['max_time_ms']:.2f}ms\n"
+            f"   💾 Cache Hit: {query['cache_hit_pct']:.1f}%\n"
+            f"   🔥 Total Impact: {query['total_time_ms']:.2f}ms\n"
+        )
+
+        # Add performance insights
+        if query["temp_blks_read"] > 0 or query["temp_blks_written"] > 0:
+            formatted += "   ⚠️  Uses temporary files (potential optimization needed)\n"
+
+        if query["cache_hit_pct"] < 90:
+            formatted += "   💡 Low cache hit ratio (consider indexing)\n"
+
+        if query["mean_time_ms"] > 1000:
+            formatted += "   🚨 High average execution time (investigate query plan)\n"
+
+        formatted += "\n"
+
+    return formatted
+
+
+def get_system_prompt(
+    recent_checks: list[dict] | None = None, expensive_queries: list[dict] | None = None
+) -> str:
     """Generate system prompt with database context."""
-    prompt = """You are an AI assistant helping users understand their multi-region PostgreSQL database performance.
+    prompt = """🎯 You are an expert PostgreSQL database performance analyst helping users optimize their multi-region database infrastructure.
 
-You have access to information about:
+📊 You have access to comprehensive performance data including:
 - Connection tests across multiple regions (US East, EU West, Asia Pacific)
 - Latency measurements and performance metrics
-- Load testing results
+- Load testing results and scalability insights
 - Database health metrics (cache hit ratios, connection counts, etc.)
+- Query performance analysis and expensive query identification
 
-When answering questions:
-1. Be concise and actionable
-2. Focus on performance insights and recommendations
-3. Explain database concepts in simple terms
-4. Reference specific metrics when available
-5. Suggest optimizations when relevant
+🎯 Your expertise includes:
+- Query optimization and indexing strategies
+- Connection pooling and performance tuning
+- Multi-region latency analysis
+- Database scaling and replication strategies
+- PostgreSQL internals and best practices
+
+💡 When answering questions:
+1. Be concise and actionable with specific recommendations
+2. Focus on performance insights with measurable improvements
+3. Explain complex database concepts in simple, practical terms
+4. Reference specific metrics and provide optimization steps
+5. Prioritize suggestions by impact and implementation effort
+6. Consider security and operational implications
 
 """
 
+    if expensive_queries:
+        prompt += format_expensive_queries(expensive_queries)
+        prompt += "\n"
+
     if recent_checks:
-        prompt += "\nRecent check data:\n"
+        prompt += "📈 Recent Performance Checks:\n"
         for check in recent_checks[:5]:
             region = check.get("region_id", "unknown")
             check_type = check.get("check_type", "unknown")
@@ -37,10 +158,12 @@ When answering questions:
 
             if success and metric:
                 prompt += (
-                    f"- {region}: {check_type} - {metric:.2f} {check.get('metric_unit', '')}\n"
+                    f"   ✅ {region}: {check_type} - {metric:.2f} {check.get('metric_unit', '')}\n"
                 )
             elif not success:
-                prompt += f"- {region}: {check_type} - FAILED\n"
+                prompt += f"   ❌ {region}: {check_type} - FAILED\n"
+
+    prompt += "\n🔧 Provide specific, actionable recommendations based on the data above."
 
     return prompt
 
@@ -49,12 +172,12 @@ async def chat_with_ollama(
     message: str, model: str | None = None, context: str | None = None
 ) -> AsyncGenerator[str, None]:
     """Stream chat responses from Ollama."""
-    
+
     config = get_chat_config()
     if not config.enabled:
         yield "Chat functionality is disabled. Set CHAT_ENABLED=true to enable."
         return
-    
+
     model = model or config.model
 
     messages = []
@@ -76,7 +199,7 @@ async def chat_with_ollama(
                 if response.status_code != 200:
                     yield f"Error: Ollama service returned status {response.status_code}"
                     return
-                    
+
                 async for line in response.aiter_lines():
                     if line.strip():
                         try:
@@ -95,13 +218,17 @@ async def get_chat_response(
     message: str, recent_checks: list[dict] | None = None, model: str | None = None
 ) -> str:
     """Get a complete chat response from Ollama (non-streaming)."""
-    
+
     config = get_chat_config()
     if not config.enabled:
         return "Chat functionality is disabled. Set CHAT_ENABLED=true to enable."
-    
+
     model = model or config.model
-    system_prompt = get_system_prompt(recent_checks or [])
+
+    # Get expensive queries data
+    expensive_queries = await get_expensive_queries()
+
+    system_prompt = get_system_prompt(recent_checks or [], expensive_queries)
 
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
 
@@ -114,8 +241,12 @@ async def get_chat_response(
 
             if response.status_code == 200:
                 data = response.json()
-                return data.get("message", {}).get("content", "Sorry, I couldn't generate a response.")
+                return data.get("message", {}).get(
+                    "content", "Sorry, I couldn't generate a response."
+                )
             else:
                 return f"Error: Unable to connect to Ollama (status {response.status_code})"
     except httpx.ConnectError:
-        return "Error: Cannot connect to Ollama service. Make sure Ollama is running and accessible."
+        return (
+            "Error: Cannot connect to Ollama service. Make sure Ollama is running and accessible."
+        )

@@ -4,21 +4,17 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 
-from app.chat import get_chat_response
+from app.chat import get_chat_response, get_expensive_queries
 from app.config import get_database
 from app.database import (
     get_all_recent_checks,
     get_connection_health_metrics,
-    get_health_metrics,
-    load_test,
     measure_connection_latency,
-    measure_latency,
     run_connection_load_test,
     save_connection_check,
     save_health_metrics_check,
     save_latency_check,
     save_load_test_check,
-    test_connection,
 )
 from app.db_manager_postgres import db_manager
 from app.region_mapping import estimate_latency_distance, get_cloud_color, get_region_coordinates
@@ -126,6 +122,24 @@ async def chat(request: Request):
         return JSONResponse(content={"error": f"Chat service error: {str(e)}"}, status_code=500)
 
 
+@router.get("/expensive-queries")
+async def get_expensive_queries_data():
+    """Get expensive queries data for analysis."""
+    try:
+        expensive_queries = await get_expensive_queries()
+        return JSONResponse(
+            content={
+                "expensive_queries": expensive_queries,
+                "total_count": len(expensive_queries),
+                "description": "Top expensive queries from last 30 days, prioritized by mean execution time",
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            content={"error": f"Failed to fetch expensive queries: {str(e)}"}, status_code=500
+        )
+
+
 @router.get("/map-data")
 async def get_map_data():
     """Get map data for all database connections with geolocation and performance metrics."""
@@ -225,7 +239,9 @@ async def test_database_connection(request: Request, connection_id: int):
             result["coords"] = coords
         return JSONResponse(content=result)
     except Exception as e:
-        return JSONResponse(content={"success": False, "error": str(e), "coords": coords}, status_code=500)
+        return JSONResponse(
+            content={"success": False, "error": str(e), "coords": coords}, status_code=500
+        )
 
 
 @router.post("/health-check/{connection_id}")
@@ -261,8 +277,13 @@ async def get_database_health(request: Request, connection_id: int):
 
     except Exception as e:
         return JSONResponse(
-            content={"success": False, "error": f"Health check failed: {str(e)}", "connection_id": connection_id, "coords": coords},
-            status_code=500
+            content={
+                "success": False,
+                "error": f"Health check failed: {str(e)}",
+                "connection_id": connection_id,
+                "coords": coords,
+            },
+            status_code=500,
         )
 
 
@@ -291,11 +312,15 @@ async def test_database_latency(request: Request, connection_id: int, iterations
             result["coords"] = coords
         return JSONResponse(content=result)
     except Exception as e:
-        return JSONResponse(content={"success": False, "error": str(e), "coords": coords}, status_code=500)
+        return JSONResponse(
+            content={"success": False, "error": str(e), "coords": coords}, status_code=500
+        )
 
 
 @router.post("/load-test/{connection_id}")
-async def run_database_load_test_endpoint(request: Request, connection_id: int, concurrent: int = 10):
+async def run_database_load_test_endpoint(
+    request: Request, connection_id: int, concurrent: int = 10
+):
     """Run a load test against a specific database connection."""
     connection = await db_manager.get_connection(connection_id)
     if not connection:
@@ -319,7 +344,9 @@ async def run_database_load_test_endpoint(request: Request, connection_id: int, 
             result["coords"] = coords
         return JSONResponse(content=result)
     except Exception as e:
-        return JSONResponse(content={"success": False, "error": str(e), "coords": coords}, status_code=500)
+        return JSONResponse(
+            content={"success": False, "error": str(e), "coords": coords}, status_code=500
+        )
 
 
 @router.get("/test-all-databases")
@@ -385,21 +412,20 @@ async def health_check_all_databases(request: Request):
 
     # Execute all health checks in parallel
     import asyncio
+
     for task_data in health_check_tasks:
         conn = task_data["connection"]
-        
+
         try:
             # Wait for both health check and connection test
             health_result, connection_result = await asyncio.gather(
-                task_data["health_task"],
-                task_data["connection_test_task"],
-                return_exceptions=True
+                task_data["health_task"], task_data["connection_test_task"], return_exceptions=True
             )
 
             # Handle health check result
             if isinstance(health_result, Exception):
                 health_result = {"success": False, "error": str(health_result)}
-            
+
             # Handle connection test result
             if isinstance(connection_result, Exception):
                 connection_result = {"success": False, "error": str(connection_result)}
@@ -411,7 +437,9 @@ async def health_check_all_databases(request: Request):
                 except Exception as save_error:
                     if "warnings" not in health_result:
                         health_result["warnings"] = []
-                    health_result["warnings"].append(f"Failed to save health metrics: {str(save_error)}")
+                    health_result["warnings"].append(
+                        f"Failed to save health metrics: {str(save_error)}"
+                    )
 
             results.append(
                 {
@@ -466,7 +494,7 @@ async def get_database_summary():
         "total_databases": len(connections),
         "by_provider": {},
         "by_region": {},
-        "connections": []
+        "connections": [],
     }
 
     for conn in connections:
@@ -522,7 +550,7 @@ async def get_latency_chart_data(hours: int = 24):
         async with get_connection(dsn) as conn:
             # Get latency data from the last X hours
             rows = await conn.fetch(
-                """
+                f"""
                 SELECT
                     lc.region_id,
                     lc.checked_at,
@@ -532,12 +560,12 @@ async def get_latency_chart_data(hours: int = 24):
                     dc.name as connection_name
                 FROM latency_checks lc
                 LEFT JOIN database_connections dc ON lc.region_id::text = dc.id::text
-                WHERE lc.checked_at >= NOW() - INTERVAL '%s hours'
+                WHERE lc.checked_at >= NOW() - INTERVAL '{hours} hours'
                     AND lc.success = true
                     AND lc.region_id IS NOT NULL
                     AND lc.region_id ~ '^[0-9]+$'
                 ORDER BY lc.checked_at ASC
-                """ % hours
+                """
             )
 
             # Group data by connection
@@ -547,21 +575,17 @@ async def get_latency_chart_data(hours: int = 24):
                 conn_name = row["connection_name"] or f"Database {conn_id}"
 
                 if conn_id not in data_by_connection:
-                    data_by_connection[conn_id] = {
-                        "label": conn_name,
-                        "data": [],
-                        "timestamps": []
-                    }
+                    data_by_connection[conn_id] = {"label": conn_name, "data": [], "timestamps": []}
 
                 data_by_connection[conn_id]["data"].append(float(row["avg_ms"]))
-                data_by_connection[conn_id]["timestamps"].append(
-                    row["checked_at"].isoformat()
-                )
+                data_by_connection[conn_id]["timestamps"].append(row["checked_at"].isoformat())
 
-            return JSONResponse(content={
-                "datasets": list(data_by_connection.values()),
-                "title": f"Database Latency - Last {hours} Hours"
-            })
+            return JSONResponse(
+                content={
+                    "datasets": list(data_by_connection.values()),
+                    "title": f"Database Latency - Last {hours} Hours",
+                }
+            )
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
@@ -580,7 +604,7 @@ async def get_health_metrics_chart_data(hours: int = 24):
         async with get_connection(dsn) as conn:
             # Get health metrics data from the last X hours
             rows = await conn.fetch(
-                """
+                f"""
                 SELECT
                     hmc.region_id,
                     hmc.checked_at,
@@ -590,12 +614,12 @@ async def get_health_metrics_chart_data(hours: int = 24):
                     dc.name as connection_name
                 FROM health_metrics_checks hmc
                 LEFT JOIN database_connections dc ON hmc.region_id::text = dc.id::text
-                WHERE hmc.checked_at >= NOW() - INTERVAL '%s hours'
+                WHERE hmc.checked_at >= NOW() - INTERVAL '{hours} hours'
                     AND hmc.success = true
                     AND hmc.region_id IS NOT NULL
                     AND hmc.region_id ~ '^[0-9]+$'
                 ORDER BY hmc.checked_at ASC
-                """ % hours
+                """
             )
 
             # Group data by connection and metric type
@@ -612,7 +636,7 @@ async def get_health_metrics_chart_data(hours: int = 24):
                     cache_hit_data[conn_id] = {
                         "label": f"{conn_name} - Cache Hit %",
                         "data": [],
-                        "timestamps": []
+                        "timestamps": [],
                     }
 
                 if row["cache_hit_ratio"] is not None:
@@ -624,18 +648,20 @@ async def get_health_metrics_chart_data(hours: int = 24):
                     connections_data[conn_id] = {
                         "label": f"{conn_name} - Active Conns",
                         "data": [],
-                        "timestamps": []
+                        "timestamps": [],
                     }
 
                 if row["active_connections"] is not None:
                     connections_data[conn_id]["data"].append(int(row["active_connections"]))
                     connections_data[conn_id]["timestamps"].append(timestamp)
 
-            return JSONResponse(content={
-                "cache_hit_datasets": list(cache_hit_data.values()),
-                "connections_datasets": list(connections_data.values()),
-                "title": f"Database Health Metrics - Last {hours} Hours"
-            })
+            return JSONResponse(
+                content={
+                    "cache_hit_datasets": list(cache_hit_data.values()),
+                    "connections_datasets": list(connections_data.values()),
+                    "title": f"Database Health Metrics - Last {hours} Hours",
+                }
+            )
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
@@ -711,25 +737,33 @@ async def get_performance_summary_chart_data():
 
             # Format data for charts
             latency_data = {
-                "labels": [row["connection_name"] or f"DB {row['region_id']}" for row in latency_rows],
-                "values": [float(row["avg_latency"]) for row in latency_rows]
+                "labels": [
+                    row["connection_name"] or f"DB {row['region_id']}" for row in latency_rows
+                ],
+                "values": [float(row["avg_latency"]) for row in latency_rows],
             }
 
             success_data = {
-                "labels": [row["connection_name"] or f"DB {row['region_id']}" for row in success_rows],
-                "values": [float(row["success_rate"]) for row in success_rows]
+                "labels": [
+                    row["connection_name"] or f"DB {row['region_id']}" for row in success_rows
+                ],
+                "values": [float(row["success_rate"]) for row in success_rows],
             }
 
             cache_data = {
-                "labels": [row["connection_name"] or f"DB {row['region_id']}" for row in cache_rows],
-                "values": [float(row["avg_cache_hit"]) for row in cache_rows]
+                "labels": [
+                    row["connection_name"] or f"DB {row['region_id']}" for row in cache_rows
+                ],
+                "values": [float(row["avg_cache_hit"]) for row in cache_rows],
             }
 
-            return JSONResponse(content={
-                "latency": latency_data,
-                "success_rate": success_data,
-                "cache_hit": cache_data,
-                "title": "24-Hour Performance Summary"
-            })
+            return JSONResponse(
+                content={
+                    "latency": latency_data,
+                    "success_rate": success_data,
+                    "cache_hit": cache_data,
+                    "title": "24-Hour Performance Summary",
+                }
+            )
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
