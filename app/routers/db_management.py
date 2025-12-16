@@ -21,22 +21,22 @@ class DatabaseCreateRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=63)
     password: str = Field(..., min_length=1)
     ssl_mode: str = Field(default="require")
-    region: str = Field(None, max_length=50)
-    cloud_provider: str = Field(None, max_length=50)
+    region: str | None = Field(None, max_length=50)
+    cloud_provider: str | None = Field(None, max_length=50)
 
 
 class DatabaseUpdateRequest(BaseModel):
     """Request model for updating a database connection."""
 
-    name: str = Field(None, min_length=1, max_length=100)
-    host: str = Field(None, min_length=1, max_length=255)
-    port: int = Field(None, ge=1, le=65535)
-    database: str = Field(None, min_length=1, max_length=63)
-    username: str = Field(None, min_length=1, max_length=63)
-    password: str = Field(None, min_length=1)
-    ssl_mode: str = Field(None)
-    region: str = Field(None, max_length=50)
-    cloud_provider: str = Field(None, max_length=50)
+    name: str | None = Field(None, min_length=1, max_length=100)
+    host: str | None = Field(None, min_length=1, max_length=255)
+    port: int | None = Field(None, ge=1, le=65535)
+    database: str | None = Field(None, min_length=1, max_length=63)
+    username: str | None = Field(None, min_length=1, max_length=63)
+    password: str | None = Field(None, min_length=1)
+    ssl_mode: str | None = Field(None)
+    region: str | None = Field(None, max_length=50)
+    cloud_provider: str | None = Field(None, max_length=50)
     is_active: bool | None = None
 
 
@@ -100,32 +100,35 @@ async def create_connection(request: Request, conn_data: DatabaseCreateRequest):
     success = db_manager.save_connection(connection)
 
     if not success:
-        raise HTTPException(status_code=500, detail="Failed to save database connection")
+        # Return error HTML
+        return templates.TemplateResponse(
+            "partials/connection_result.html",
+            {"request": request, "result": {"success": False, "error": "Failed to save database connection"}},
+            {"HX-Trigger": "connection-error"}
+        )
 
-    # Test the connection
+    # Test connection
     test_result = db_manager.test_connection(connection)
 
-    response_data = {
-        "id": connection.id,
-        "name": connection.name,
-        "host": connection.host,
-        "port": connection.port,
-        "database": connection.database,
-        "username": connection.username,
-        "ssl_mode": connection.ssl_mode,
-        "region": connection.region,
-        "cloud_provider": connection.cloud_provider,
-        "is_active": connection.is_active,
-        "test_result": test_result,
-    }
+    if not test_result.get("success", False):
+        # Return test failure HTML
+        return templates.TemplateResponse(
+            "partials/connection_result.html",
+            {"request": request, "result": test_result},
+            {"HX-Trigger": "connection-test-failed"}
+        )
 
-    return JSONResponse(
-        content={
-            "success": True,
-            "message": "Database connection created successfully",
-            "connection": response_data,
+    # Return success HTML
+    response = templates.TemplateResponse(
+        "partials/connection_result.html",
+        {"request": request, "result": test_result},
+        {
+            "HX-Trigger": "connection-created",
+            "HX-Trigger-After-Swap": "htmx.trigger('#database-connections-container', 'load'); document.getElementById('connection-form-container').style.display='none';"
         }
     )
+
+    return response
 
 
 @router.post("/connections/{connection_id}/test")

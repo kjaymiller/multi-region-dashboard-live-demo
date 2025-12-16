@@ -8,7 +8,8 @@
     <form id="connection-form"
           hx-post="/api/db/connections"
           hx-target="#form-result"
-          hx-swap="innerHTML">
+          hx-swap="innerHTML"
+          enctype="multipart/form-data">
         <div class="row">
             <div class="col-md-6 mb-3">
                 <label for="name" class="form-label">Connection Name *</label>
@@ -93,6 +94,18 @@
 </div>
 
 <script>
-    // Show the form when it's loaded
+    // Show form when it's loaded
     document.getElementById('connection-form-container').style.display = 'block';
+    
+    // Listen for connection creation events
+    document.body.addEventListener('connection-created', function() {
+        // Hide the form and refresh connections
+        document.getElementById('connection-form-container').style.display = 'none';
+        htmx.trigger('#database-connections-container', 'load');
+    });
+    
+    document.body.addEventListener('connection-error', function() {
+        // Keep form open on error
+        console.log('Connection creation failed');
+    });
 </script>

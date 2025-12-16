@@ -52,7 +52,13 @@ class DatabaseManager:
 
         if os.path.exists(key_file):
             with open(key_file, "rb") as f:
-                self._key = f.read()
+                key_data = f.read()
+                # Check if file contains salt (32 bytes) + key (44 bytes base64)
+                if len(key_data) > 44:  # Has salt
+                    salt = key_data[:16]
+                    self._key = key_data[16:]
+                else:  # Legacy format without salt
+                    self._key = key_data
         else:
             # Generate a new key with PBKDF2
             password = os.getenv("DB_MANAGER_PASSWORD", "default-password-change-me")
@@ -66,8 +72,9 @@ class DatabaseManager:
             self._key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
 
             os.makedirs(self.storage_path, exist_ok=True)
+            # Store salt + key for future loading
             with open(key_file, "wb") as f:
-                f.write(self._key)
+                f.write(salt + self._key)
 
         self._cipher = Fernet(self._key)
 
@@ -186,7 +193,7 @@ class DatabaseManager:
 
                 conn = await asyncpg.connect(
                     dsn=connection.dsn,
-                    ssl=ssl_mode
+                    ssl=ssl_mode is not None
                 )
 
                 result = await conn.fetchrow(
