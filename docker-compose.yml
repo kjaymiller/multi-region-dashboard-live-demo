@@ -20,7 +20,7 @@ services:
       
       # Ollama settings
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:latest}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gpt-oss}
       CHAT_ENABLED: ${CHAT_ENABLED:-true}
     depends_on:
       postgres:
