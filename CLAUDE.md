@@ -42,28 +42,70 @@ just setup            # Full setup: install deps and create .env
 just setup-env        # Copy .env.example to .env
 ```
 
+## Database Requirements
+
+### Backend Database (Application Storage)
+
+The PostgreSQL backend requires a database with the following extensions enabled:
+
+- **TimescaleDB**: Time-series database extension for storing connection test history in hypertables
+- **pg_stat_statements**: Query performance statistics for monitoring
+
+#### Local Development Database
+
+Use the included Docker Compose setup:
+```bash
+docker compose --profile postgres up -d
+```
+
+This starts PostgreSQL 15 with TimescaleDB and pg_stat_statements pre-installed.
+
+#### Production/Remote Database
+
+Ensure your PostgreSQL database has these extensions enabled:
+```sql
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+```
+
+Then run the database setup script to create tables:
+```bash
+just db-setup
+```
+
+### Target Databases (External Databases Being Monitored)
+
+The external PostgreSQL databases that you add to the dashboard for monitoring should have:
+
+- **pg_stat_statements**: Required for comprehensive health checks and query performance metrics
+
+**Without pg_stat_statements**: Health checks will still work but will return limited data:
+- Basic metrics (cache hit ratio, connections, database size) will still be available
+- Query performance statistics will be unavailable
+- Health check responses will show `pg_stat_statements_available: false`
+
+To enable on target databases:
+```sql
+-- Add to postgresql.conf
+shared_preload_libraries = 'pg_stat_statements'
+
+-- After restart, create extension in each database
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+```
+
 ## Architecture Overview
 
-### Dual Backend System
+### PostgreSQL Backend
 
-The application supports two database storage backends for connection management:
+The application uses PostgreSQL for storing connection metadata and test history:
 
-1. **File-based backend** (`app/db_manager.py` + `app/routers/db_management.py`):
-   - Stores connections in `.db_connections/connections.json`
-   - Uses Fernet encryption for passwords
-   - No external database required
-   - Suitable for development/testing
-
-2. **PostgreSQL backend** (`app/db_manager_postgres.py` + `app/routers/db_management_postgres.py`):
-   - Stores connections in PostgreSQL database
-   - Uses bcrypt for password hashing
-   - Requires DATABASE_URL environment variable
-   - Supports concurrent users and scaling
-   - Managed via Alembic migrations
-
-**Switching backends**: Edit `app/main.py` line 33 to include the desired router:
-- File-based: `app.include_router(db_management.router, prefix="/api/db")`
-- PostgreSQL: `app.include_router(db_management_postgres.router, prefix="/api/db")`
+- Stores connections in PostgreSQL database
+- **Required PostgreSQL extensions**: TimescaleDB (for connection test history), pg_stat_statements (for query monitoring)
+- Uses bcrypt for password hashing
+- Requires DATABASE_URL environment variable
+- Supports concurrent users and scaling
+- Schema managed via `setup_database.py` (no Alembic/migrations)
+- Connection test results stored in TimescaleDB hypertable for time-series analysis
 
 ### Key Architectural Patterns
 
@@ -76,11 +118,12 @@ The application supports two database storage backends for connection management
 **Database Connection Testing**:
 - The app manages and tests connections to *external* PostgreSQL databases
 - Backend database (for storing connection metadata) is separate from tested connections
-- Both backends implement `test_connection()` which validates external DB connectivity
+- The `test_connection()` method validates external DB connectivity
+- Health checks query pg_stat_statements on target databases for comprehensive metrics
+- Target databases without pg_stat_statements will return basic metrics only
 
 **Security Model**:
-- File backend: Fernet symmetric encryption with PBKDF2 key derivation
-- PostgreSQL backend: bcrypt password hashing (rounds=12)
+- Password hashing: bcrypt (rounds=12)
 - SSL handling: Automatic detection - require SSL for remote hosts, disable for localhost
 - Never expose plaintext passwords in API responses
 
@@ -92,7 +135,7 @@ The application supports two database storage backends for connection management
 ## Critical Implementation Details
 
 ### Database Column Names
-The PostgreSQL backend uses `database_name` column, not `database`. When writing queries for the PostgreSQL backend, always use:
+The database uses `database_name` column, not `database`. When writing queries, always use:
 ```python
 # Correct
 await conn.execute("SELECT database_name FROM database_connections WHERE id = $1", conn_id)
@@ -112,8 +155,7 @@ return templates.TemplateResponse(
 ```
 
 ### Password Handling
-- **File backend**: Store encrypted password in `password` field
-- **PostgreSQL backend**: Store `password_hash` and `salt`, never store plaintext
+- Store `password_hash` and `salt`, never store plaintext
 - Testing connections requires plaintext password, but it's never persisted
 
 ### SSL Context Creation
@@ -131,12 +173,10 @@ use_ssl = not any(
 app/
 ├── main.py                      # FastAPI app, router configuration
 ├── config.py                    # Database configuration (DATABASE_URL)
-├── db_manager.py                # File-based connection manager
 ├── db_manager_postgres.py       # PostgreSQL-based connection manager
 ├── location_service.py          # Geographic distance calculations
 ├── routers/
 │   ├── api.py                   # Health checks, connection tests
-│   ├── db_management.py         # File backend CRUD endpoints
 │   ├── db_management_postgres.py # PostgreSQL backend CRUD endpoints
 │   └── pages.py                 # HTML page routes
 ├── templates/
@@ -153,7 +193,7 @@ app/
 
 Required environment variables (in `.env`):
 ```env
-DATABASE_URL=postgresql://user:password@host:port/dbname  # For PostgreSQL backend only
+DATABASE_URL=postgresql://user:password@host:port/dbname
 ```
 
 The app uses `python-dotenv` to load `.env` automatically.
@@ -197,7 +237,7 @@ Used for client-side interactivity:
 
 1. **HTMX refresh on test failure**: Connections save successfully but list doesn't auto-refresh when connection test fails (only triggers on success). The `connection-test-failed` trigger exists but may need frontend listener.
 
-2. **Column name mismatches**: PostgreSQL backend uses `database_name` in SQL but `database` in Python dataclass. Always map correctly when reading from DB.
+2. **Column name mismatches**: Database uses `database_name` in SQL but `database` in Python dataclass. Always map correctly when reading from DB.
 
 3. **JavaScript quote escaping**: HTMX triggers with JavaScript in header values need proper escaping.
 
@@ -205,7 +245,7 @@ Used for client-side interactivity:
 
 ## Testing Connections
 
-The `test_connection()` methods establish a real connection to external PostgreSQL databases and run:
+The `test_connection()` method establishes a real connection to external PostgreSQL databases and runs:
 ```sql
 SELECT
     inet_server_addr()::text AS server_ip,
@@ -218,6 +258,27 @@ This validates:
 - Network connectivity works
 - Database is reachable
 - Measures latency (round-trip time)
+
+## Health Checks
+
+The `get_connection_health_metrics()` function performs comprehensive health checks on target databases:
+
+**Always Available Metrics** (no extensions required):
+- Cache hit ratio (from pg_stat_database)
+- Active/idle/total connections (from pg_stat_activity)
+- Database size (from pg_database_size)
+
+**Extended Metrics** (requires pg_stat_statements):
+- Top 10 queries by call count
+- Query execution time statistics (total, mean, max)
+- Per-query cache hit percentages
+- Shared buffer hits and reads
+
+If pg_stat_statements is not available on the target database:
+- Health check still succeeds
+- Returns `pg_stat_statements_available: false`
+- Includes warning in response
+- Basic metrics are still collected
 
 ## Task Management with Beads
 

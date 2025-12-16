@@ -1,31 +1,29 @@
 # Multi-Region PostgreSQL Testing Dashboard
 
-An interactive FastAPI dashboard for managing and testing PostgreSQL database connections. Features dual database backend architecture (file-based and PostgreSQL), HTMX for dynamic frontend updates, and comprehensive CRUD operations.
+An interactive FastAPI dashboard for managing and testing PostgreSQL database connections. Features HTMX for dynamic frontend updates, comprehensive CRUD operations, and TimescaleDB integration for connection test history.
 
 ## Features
 
 - **Database Connection Management**: Create, read, update, delete PostgreSQL connections
-- **Dual Backend Architecture**: File-based storage and PostgreSQL backend with encrypted credentials
+- **PostgreSQL Backend**: Secure storage with bcrypt password hashing and TimescaleDB for time-series data
 - **Real-time Frontend Updates**: HTMX-powered interface for seamless CRUD operations
 - **Connection Testing**: Validate database connectivity with latency measurement
 - **Geographic Visualization**: Interactive map showing connection locations
 - **AI Chat Assistant**: Performance insights powered by Ollama
-- **Secure Storage**: Encrypted password storage with bcrypt hashing (PostgreSQL) or Fernet encryption (file-based)
+- **Secure Storage**: bcrypt password hashing for maximum security
 - **Auto-refresh Interface**: HTMX triggers for immediate UI updates after changes
 
 ## Tech Stack
 
 - **FastAPI**: Modern Python web framework with async support
-- **Database Backends**: 
-  - File-based storage with Fernet encryption
-  - PostgreSQL backend with bcrypt password hashing
+- **PostgreSQL**: Backend database with bcrypt password hashing and TimescaleDB for time-series data
 - **HTMX**: Dynamic HTML updates without JavaScript frameworks
 - **Jinja2**: Template engine for server-side rendering
 - **Alpine.js**: Client-side interactivity and state management
 - **Bootstrap**: Responsive CSS framework
 - **Cryptography**: Password encryption and hashing
 - **asyncpg**: Fast PostgreSQL async driver
-- **Alembic**: Database migrations (PostgreSQL backend)
+- **TimescaleDB**: Time-series database extension for connection test history
 - **uv**: Fast Python package installer and resolver
 
 ## Prerequisites
@@ -33,7 +31,14 @@ An interactive FastAPI dashboard for managing and testing PostgreSQL database co
 - Python 3.10 or higher
 - [uv](https://github.com/astral-sh/uv) package manager
 - [just](https://github.com/casey/just) command runner (optional but recommended)
-- Aiven PostgreSQL databases (or any PostgreSQL instances)
+- **Backend PostgreSQL database** (for application storage):
+  - **TimescaleDB extension** (for connection test history)
+  - **pg_stat_statements extension** (for query performance monitoring)
+  - Docker Compose setup provided, or use managed PostgreSQL with extensions
+- **Target PostgreSQL databases** (to monitor):
+  - **pg_stat_statements extension** (recommended for comprehensive health checks)
+  - Without this extension, health checks will work but provide limited query statistics
+  - Aiven PostgreSQL or any PostgreSQL instances to test
 - LaunchDarkly account (for feature flags)
 
 ## Quick Start
@@ -58,11 +63,37 @@ uv sync --extra dev
 cp .env.example .env
 ```
 
-### 3. Configure environment variables
+### 3. Start the backend PostgreSQL database (with Docker Compose)
+
+For local development, use the included Docker Compose setup with TimescaleDB:
+
+```bash
+docker compose --profile postgres up -d
+```
+
+This starts a PostgreSQL 15 database with TimescaleDB and pg_stat_statements extensions pre-installed for storing application data.
+
+Alternatively, provide your own PostgreSQL database with the required extensions enabled.
+
+**Note**: This is the backend database where the app stores connection metadata, not the databases you'll be monitoring.
+
+### 4. Set up the database schema
+
+```bash
+just db-setup
+```
+
+This creates all required tables, including the TimescaleDB hypertable for connection test history.
+
+### 5. Configure environment variables
 
 Edit `.env` and add your database connection strings and LaunchDarkly SDK key:
 
 ```env
+# Backend Database (for storing connection metadata and test history)
+# Must have TimescaleDB and pg_stat_statements extensions enabled
+DATABASE_URL=postgresql://dashboard_user:dashboard_password@localhost:5432/dashboard
+
 # Aiven PostgreSQL Connection Strings (use PgBouncer connection strings on port 6543)
 AIVEN_PG_US_EAST=postgresql://user:password@host:6543/defaultdb?sslmode=require
 AIVEN_PG_EU_WEST=postgresql://user:password@host:6543/defaultdb?sslmode=require
@@ -72,7 +103,7 @@ AIVEN_PG_ASIA_PACIFIC=postgresql://user:password@host:6543/defaultdb?sslmode=req
 LAUNCHDARKLY_SDK_KEY=sdk-your-key-here
 ```
 
-### 4. Run the application
+### 6. Run the application
 
 With `just`:
 ```bash
@@ -84,7 +115,7 @@ Or manually:
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 5. Open your browser
+### 7. Open your browser
 
 Navigate to [http://localhost:8000](http://localhost:8000)
 
@@ -96,6 +127,7 @@ If you have `just` installed, you can use these commands:
 just                  # List all available commands
 just dev              # Run development server with auto-reload
 just serve            # Run production server
+just db-setup         # Create database tables and populate initial data
 just install          # Install dependencies
 just install-dev      # Install with dev dependencies
 just add <package>    # Add a new dependency
@@ -123,11 +155,9 @@ multi-region-dashboard-live-demo/
 │   ├── queries.py           # PostgreSQL query definitions
 │   ├── chat.py            # AI chat assistant logic
 │   ├── region_mapping.py    # Geographic coordinate mapping
-│   ├── db_manager.py       # File-based database manager
 │   ├── db_manager_postgres.py # PostgreSQL backend manager
 │   ├── routers/
 │   │   ├── api.py           # General API endpoints
-│   │   ├── db_management.py # File-based CRUD endpoints
 │   │   ├── db_management_postgres.py # PostgreSQL CRUD endpoints
 │   │   └── pages.py         # HTML page routes
 │   ├── static/              # Static assets (CSS, JS)
@@ -142,8 +172,8 @@ multi-region-dashboard-live-demo/
 │           ├── map_view.html
 │           └── ...
 ├── .beads/                  # Beads task management
-├── .db_connections/         # File-based storage
-├── alembic/               # Database migrations
+├── migrations/              # SQL migration scripts (run via docker-entrypoint-initdb.d)
+├── setup_database.py        # Database schema setup (no Alembic/migrations)
 ├── .env                    # Environment variables (not in git)
 ├── .env.example            # Example environment variables
 ├── justfile                # Command runner recipes
@@ -231,21 +261,15 @@ Consider using a process manager like systemd, supervisor, or containerizing wit
 
 ## Architecture Notes
 
-### Database Backend Selection
+### PostgreSQL Backend
 
-The application supports two database backends:
+The application uses PostgreSQL for storing connection metadata and test history:
 
-1. **File-based** (`db_manager.py`):
-   - Uses Fernet encryption for password storage
-   - Stores connections in `.db_connections/connections.json`
-   - No external database required
-   - Suitable for development/testing
-
-2. **PostgreSQL** (`db_manager_postgres.py`):
-   - Uses bcrypt for password hashing
-   - Requires PostgreSQL database and migrations
-   - Supports concurrent users and scaling
-   - Configured in `app/main.py` by router selection
+- Uses bcrypt for password hashing
+- Requires PostgreSQL database with TimescaleDB and pg_stat_statements extensions
+- Schema managed via `setup_database.py` (no Alembic/migrations)
+- Supports concurrent users and scaling
+- Stores connection test history in TimescaleDB hypertable
 
 ### Frontend Refresh System
 
@@ -258,7 +282,7 @@ The application uses HTMX triggers for automatic UI updates:
 
 1. **Frontend Refresh on Test Failures**: Connections save successfully but list doesn't refresh when connection test fails
 2. **JavaScript Quote Issues**: HTMX-Trigger-After-Swap headers need proper escaping
-3. **Database Column Mismatches**: PostgreSQL backend uses `database_name` column
+3. **Database Column Mismatches**: Database uses `database_name` column
 
 ## Troubleshooting
 
@@ -266,18 +290,14 @@ The application uses HTMX triggers for automatic UI updates:
 
 **New connections not appearing:**
 1. Check browser console for HTMX errors
-2. Verify file permissions on `.db_connections/` directory
-3. Check if connection test is failing but saving successfully
-4. Look for JavaScript syntax errors in HTMX triggers
+2. Check if connection test is failing but saving successfully
+3. Look for JavaScript syntax errors in HTMX triggers
+4. Verify database connectivity
 
 **Delete operations not working:**
-1. Verify correct backend is configured in `app/main.py`
-2. Check database connectivity (PostgreSQL backend)
-3. Look for column name mismatches in SQL queries
-
-**Backend switching:**
-- File-based: Edit `app/main.py` line 33 to use `db_management.router`
-- PostgreSQL: Edit `app/main.py` line 33 to use `db_management_postgres.router`
+1. Check database connectivity
+2. Look for column name mismatches in SQL queries
+3. Check browser console for errors
 
 ### Development Issues
 
@@ -286,10 +306,11 @@ If dependencies are missing:
 just add cryptography bcrypt asyncpg
 ```
 
-If migrations fail:
+If database setup fails:
 ```bash
 # Check DATABASE_URL in .env
-uv run alembic current
+# Verify TimescaleDB and pg_stat_statements extensions are available
+just db-setup
 ```
 
 ### Connection Testing
@@ -300,6 +321,20 @@ If connections save but don't test:
 3. Validate SSL/TLS settings
 4. Test with external client like `psql`
 
+### Health Checks Missing Query Statistics
+
+If health checks succeed but don't show query performance data:
+1. Check if target database has `pg_stat_statements` extension installed
+2. Enable the extension on target databases:
+   ```sql
+   -- Add to postgresql.conf
+   shared_preload_libraries = 'pg_stat_statements'
+
+   -- After database restart
+   CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+   ```
+3. Health checks will still work without this extension, but query statistics will be unavailable
+
 ## License
 
 [Add your license here]
@@ -309,14 +344,13 @@ If connections save but don't test:
 ### Bug Fixes Applied
 
 1. **Delete Functionality** (Dec 2025):
-   - Fixed SQL column name mismatches in PostgreSQL backend
+   - Fixed SQL column name mismatches
    - Corrected `database` vs `database_name` column references
-   - Delete endpoints now work correctly for both backends
+   - Delete endpoints now work correctly
 
 2. **Frontend Refresh Issues** (Dec 2025):
    - Identified: HTMX triggers only fire on successful connection creation
    - Connection test failures don't refresh list despite successful saves
-   - Partial fix implemented in `db_management.py`
    - JavaScript quote escaping issue identified
 
 ### Development Workflow
