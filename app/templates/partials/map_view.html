@@ -147,9 +147,12 @@ async function loadMapData() {
 
         // Draw lines from user to each database
         if (userLocationCoords) {
+            console.log(`Drawing ${data.databases.length} user-to-database lines`);
             data.databases.forEach(db => {
                 addUserToDatabaseLine(db);
             });
+        } else {
+            console.log('✗ Skipping user lines - user location not yet available');
         }
 
         // Add connection lines between databases
@@ -168,32 +171,37 @@ async function getUserLocation() {
         await getIPLocation();
         return;
     }
-    
-    navigator.geolocation.getCurrentPosition(
-        async (position) => {
-            // Browser geolocation succeeded
-            const userLocation = {
-                lat: position.coords.latitude,
-                lon: position.coords.longitude,
-                city: "Your Location",
-                country: "Detected",
-                ip: "Browser",
-                is_local: false,
-                accuracy: position.coords.accuracy
-            };
-            addUserLocationMarker(userLocation);
-        },
-        async (error) => {
-            // Browser geolocation failed, fallback to IP-based
-            console.log('Browser geolocation failed, using IP-based location:', error.message);
-            await getIPLocation();
-        },
-        {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 300000 // 5 minutes cache
-        }
-    );
+
+    // Wrap geolocation in a Promise so we can await it
+    return new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                // Browser geolocation succeeded
+                const userLocation = {
+                    lat: position.coords.latitude,
+                    lon: position.coords.longitude,
+                    city: "Your Location",
+                    country: "Detected",
+                    ip: "Browser",
+                    is_local: false,
+                    accuracy: position.coords.accuracy
+                };
+                addUserLocationMarker(userLocation);
+                resolve();
+            },
+            async (error) => {
+                // Browser geolocation failed, fallback to IP-based
+                console.log('Browser geolocation failed, using IP-based location:', error.message);
+                await getIPLocation();
+                resolve();
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 300000 // 5 minutes cache
+            }
+        );
+    });
 }
 
 async function getIPLocation() {
@@ -245,6 +253,7 @@ function addDatabaseMarker(db) {
 function addUserLocationMarker(userLocation) {
     // Store user location coordinates for drawing lines
     userLocationCoords = { lat: userLocation.lat, lon: userLocation.lon };
+    console.log('✓ User location stored:', userLocationCoords);
 
     const accuracyText = userLocation.accuracy ?
         `<p class="mb-1"><strong>Accuracy:</strong> ±${Math.round(userLocation.accuracy)}m</p>` : '';
@@ -293,7 +302,11 @@ function addUserLocationMarker(userLocation) {
 }
 
 function addUserToDatabaseLine(db) {
-    if (!userLocationCoords) return;
+    if (!userLocationCoords) {
+        console.log('✗ Cannot draw line - user location not available');
+        return;
+    }
+    console.log('Drawing line from user to:', db.name);
 
     const coordinates = [[userLocationCoords.lat, userLocationCoords.lon], [db.lat, db.lng]];
 
@@ -375,9 +388,14 @@ function clearMap() {
 
 function filterMapMarkers() {
     markers.forEach(marker => {
-        const shouldShow = currentFilter === 'all' || 
+        // Skip markers without database data (user location, accuracy circles)
+        if (!marker.dbData) {
+            return;
+        }
+
+        const shouldShow = currentFilter === 'all' ||
                           marker.dbData.cloud_provider.toLowerCase().includes(currentFilter);
-        
+
         if (shouldShow) {
             marker.addTo(map);
         } else {
