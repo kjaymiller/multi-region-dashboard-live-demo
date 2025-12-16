@@ -1,23 +1,31 @@
 # Multi-Region PostgreSQL Testing Dashboard
 
-An interactive FastAPI dashboard for testing PostgreSQL connectivity and performance across multiple Aiven regions. Built with HTMX for dynamic content updates and LaunchDarkly for feature flag management.
+An interactive FastAPI dashboard for managing and testing PostgreSQL database connections. Features dual database backend architecture (file-based and PostgreSQL), HTMX for dynamic frontend updates, and comprehensive CRUD operations.
 
 ## Features
 
-- **Multi-Region Connectivity Testing**: Test connections to PostgreSQL databases across US East, EU West, and Asia Pacific regions
-- **Health Checks**: Verify database availability and connection status
-- **Latency Measurement**: Measure query response times for each region
-- **Load Testing**: Run concurrent connection tests to evaluate performance under load
-- **Feature Flags**: Toggle features dynamically using LaunchDarkly
-- **Real-time Updates**: HTMX-powered interface for seamless user experience
+- **Database Connection Management**: Create, read, update, delete PostgreSQL connections
+- **Dual Backend Architecture**: File-based storage and PostgreSQL backend with encrypted credentials
+- **Real-time Frontend Updates**: HTMX-powered interface for seamless CRUD operations
+- **Connection Testing**: Validate database connectivity with latency measurement
+- **Geographic Visualization**: Interactive map showing connection locations
+- **AI Chat Assistant**: Performance insights powered by Ollama
+- **Secure Storage**: Encrypted password storage with bcrypt hashing (PostgreSQL) or Fernet encryption (file-based)
+- **Auto-refresh Interface**: HTMX triggers for immediate UI updates after changes
 
 ## Tech Stack
 
-- **FastAPI**: Modern Python web framework
-- **asyncpg**: Fast PostgreSQL async driver
+- **FastAPI**: Modern Python web framework with async support
+- **Database Backends**: 
+  - File-based storage with Fernet encryption
+  - PostgreSQL backend with bcrypt password hashing
 - **HTMX**: Dynamic HTML updates without JavaScript frameworks
 - **Jinja2**: Template engine for server-side rendering
-- **LaunchDarkly**: Feature flag management
+- **Alpine.js**: Client-side interactivity and state management
+- **Bootstrap**: Responsive CSS framework
+- **Cryptography**: Password encryption and hashing
+- **asyncpg**: Fast PostgreSQL async driver
+- **Alembic**: Database migrations (PostgreSQL backend)
 - **uv**: Fast Python package installer and resolver
 
 ## Prerequisites
@@ -109,23 +117,37 @@ just setup            # Full project setup
 multi-region-dashboard-live-demo/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py              # FastAPI application
-│   ├── config.py            # Region configurations
-│   ├── database.py          # Database connection logic
-
-│   ├── queries.py           # Database queries
+│   ├── main.py              # FastAPI application and lifespan
+│   ├── config.py            # Database configuration
+│   ├── database.py          # Database connection utilities
+│   ├── queries.py           # PostgreSQL query definitions
+│   ├── chat.py            # AI chat assistant logic
+│   ├── region_mapping.py    # Geographic coordinate mapping
+│   ├── db_manager.py       # File-based database manager
+│   ├── db_manager_postgres.py # PostgreSQL backend manager
 │   ├── routers/
-│   │   ├── api.py           # API endpoints
+│   │   ├── api.py           # General API endpoints
+│   │   ├── db_management.py # File-based CRUD endpoints
+│   │   ├── db_management_postgres.py # PostgreSQL CRUD endpoints
 │   │   └── pages.py         # HTML page routes
-│   ├── static/              # Static files
+│   ├── static/              # Static assets (CSS, JS)
 │   └── templates/           # Jinja2 templates
-│       ├── base.html
-│       ├── index.html
-│       └── partials/        # HTMX partial templates
-├── .env                     # Environment variables (not in git)
-├── .env.example             # Example environment variables
-├── pyproject.toml           # Project configuration and dependencies
-├── justfile                 # Command runner recipes
+│       ├── base.html         # Base template with HTMX setup
+│       ├── index.html         # Main dashboard page
+│       └── partials/        # Reusable UI components
+│           ├── database_connections.html
+│           ├── connection_form.html
+│           ├── connection_result.html
+│           ├── connection_details.html
+│           ├── map_view.html
+│           └── ...
+├── .beads/                  # Beads task management
+├── .db_connections/         # File-based storage
+├── alembic/               # Database migrations
+├── .env                    # Environment variables (not in git)
+├── .env.example            # Example environment variables
+├── justfile                # Command runner recipes
+├── pyproject.toml          # Project configuration and dependencies
 └── README.md
 ```
 
@@ -207,34 +229,127 @@ Consider using a process manager like systemd, supervisor, or containerizing wit
 - Rotate credentials regularly
 - Limit database user permissions to minimum required
 
+## Architecture Notes
+
+### Database Backend Selection
+
+The application supports two database backends:
+
+1. **File-based** (`db_manager.py`):
+   - Uses Fernet encryption for password storage
+   - Stores connections in `.db_connections/connections.json`
+   - No external database required
+   - Suitable for development/testing
+
+2. **PostgreSQL** (`db_manager_postgres.py`):
+   - Uses bcrypt for password hashing
+   - Requires PostgreSQL database and migrations
+   - Supports concurrent users and scaling
+   - Configured in `app/main.py` by router selection
+
+### Frontend Refresh System
+
+The application uses HTMX triggers for automatic UI updates:
+- `connection-created` → Refreshes connections list on successful creation
+- `connection-test-failed` → Should also refresh list (fix needed)
+- `connection-error` → Shows error messages
+
+### Known Issues
+
+1. **Frontend Refresh on Test Failures**: Connections save successfully but list doesn't refresh when connection test fails
+2. **JavaScript Quote Issues**: HTMX-Trigger-After-Swap headers need proper escaping
+3. **Database Column Mismatches**: PostgreSQL backend uses `database_name` column
+
 ## Troubleshooting
 
-### Connection Issues
+### Connection Management Issues
 
-If you can't connect to a database:
-1. Verify connection string in `.env`
-2. Check firewall rules allow connections
-3. Verify SSL/TLS settings
-4. Test connection with `psql` or another client
+**New connections not appearing:**
+1. Check browser console for HTMX errors
+2. Verify file permissions on `.db_connections/` directory
+3. Check if connection test is failing but saving successfully
+4. Look for JavaScript syntax errors in HTMX triggers
 
-### LaunchDarkly Issues
+**Delete operations not working:**
+1. Verify correct backend is configured in `app/main.py`
+2. Check database connectivity (PostgreSQL backend)
+3. Look for column name mismatches in SQL queries
 
-If feature flags aren't working:
-1. Verify `LAUNCHDARKLY_SDK_KEY` is set correctly
-2. Check LaunchDarkly dashboard for flag configuration
-3. Review logs for initialization errors
+**Backend switching:**
+- File-based: Edit `app/main.py` line 33 to use `db_management.router`
+- PostgreSQL: Edit `app/main.py` line 33 to use `db_management_postgres.router`
 
-### Port Already in Use
+### Development Issues
 
-If port 8000 is already in use:
+If dependencies are missing:
 ```bash
-just run 0.0.0.0 8080  # Run on port 8080 instead
+just add cryptography bcrypt asyncpg
 ```
+
+If migrations fail:
+```bash
+# Check DATABASE_URL in .env
+uv run alembic current
+```
+
+### Connection Testing
+
+If connections save but don't test:
+1. Verify target database is running
+2. Check network connectivity to host:port
+3. Validate SSL/TLS settings
+4. Test with external client like `psql`
 
 ## License
 
 [Add your license here]
 
+## Recent Updates & Fixes
+
+### Bug Fixes Applied
+
+1. **Delete Functionality** (Dec 2025):
+   - Fixed SQL column name mismatches in PostgreSQL backend
+   - Corrected `database` vs `database_name` column references
+   - Delete endpoints now work correctly for both backends
+
+2. **Frontend Refresh Issues** (Dec 2025):
+   - Identified: HTMX triggers only fire on successful connection creation
+   - Connection test failures don't refresh list despite successful saves
+   - Partial fix implemented in `db_management.py`
+   - JavaScript quote escaping issue identified
+
+### Development Workflow
+
+The project uses **Beads** for issue tracking:
+```bash
+bd create "Issue title" --type=bug|feature|task
+bd list --status=open
+bd ready                    # Show workable issues
+bd close <issue-id>
+```
+
+### Code Quality Standards
+
+- **Formatting**: Black with 100 character line length
+- **Type Hints**: Modern union syntax (`str | None`)
+- **Error Handling**: FastAPI HTTP exceptions with proper status codes
+- **Async**: All database operations use async/await
+- **Security**: Encrypted credentials, never commit secrets
+
 ## Contributing
 
-[Add contribution guidelines here]
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Follow code style guidelines (see AGENTS.md)
+4. Test thoroughly: `just check`
+5. Submit Pull Request with clear description
+
+### Development Commands
+
+```bash
+just dev              # Start development server
+just format           # Format code
+just check            # Run all checks
+just add <package>    # Add dependencies
+```
