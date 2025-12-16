@@ -64,7 +64,7 @@
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <h6 class="mb-2">Performance Indicators</h6>
+                            <h6 class="mb-2">Map Indicators</h6>
                             <div class="d-flex flex-wrap gap-3">
                                 <div class="d-flex align-items-center">
                                     <div class="status-indicator status-success"></div>
@@ -77,6 +77,10 @@
                                 <div class="d-flex align-items-center">
                                     <div class="status-indicator status-error"></div>
                                     <span>Unhealthy (&gt;200ms)</span>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <div style="background: #007bff; border: 2px solid white; border-radius: 50%; width: 12px; height: 12px;"></div>
+                                    <span>Your Location</span>
                                 </div>
                             </div>
                         </div>
@@ -120,11 +124,15 @@ function initializeMap() {
 
 async function loadMapData() {
     try {
-        const response = await fetch('/api/map-data');
-        const data = await response.json();
+        // Fetch map data
+        const mapResponse = await fetch('/api/map-data');
+        const data = await mapResponse.json();
         
         // Clear existing markers and lines
         clearMap();
+        
+        // Try to get user location from browser first
+        await getUserLocation();
         
         // Add database markers
         data.databases.forEach(db => {
@@ -138,6 +146,52 @@ async function loadMapData() {
         
     } catch (error) {
         console.error('Error loading map data:', error);
+    }
+}
+
+async function getUserLocation() {
+    if (!navigator.geolocation) {
+        // Fallback to IP-based location if geolocation not supported
+        await getIPLocation();
+        return;
+    }
+    
+    navigator.geolocation.getCurrentPosition(
+        async (position) => {
+            // Browser geolocation succeeded
+            const userLocation = {
+                lat: position.coords.latitude,
+                lon: position.coords.longitude,
+                city: "Your Location",
+                country: "Detected",
+                ip: "Browser",
+                is_local: false,
+                accuracy: position.coords.accuracy
+            };
+            addUserLocationMarker(userLocation);
+        },
+        async (error) => {
+            // Browser geolocation failed, fallback to IP-based
+            console.log('Browser geolocation failed, using IP-based location:', error.message);
+            await getIPLocation();
+        },
+        {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 300000 // 5 minutes cache
+        }
+    );
+}
+
+async function getIPLocation() {
+    try {
+        const response = await fetch('/api/location');
+        const userLocation = await response.json();
+        if (userLocation.lat && userLocation.lon) {
+            addUserLocationMarker(userLocation);
+        }
+    } catch (error) {
+        console.error('Error getting IP location:', error);
     }
 }
 
@@ -173,6 +227,53 @@ function addDatabaseMarker(db) {
     marker.dbData = db; // Store database data for filtering
     marker.addTo(map);
     markers.push(marker);
+}
+
+function addUserLocationMarker(userLocation) {
+    const accuracyText = userLocation.accuracy ? 
+        `<p class="mb-1"><strong>Accuracy:</strong> ±${Math.round(userLocation.accuracy)}m</p>` : '';
+    
+    const locationType = userLocation.ip === 'Browser' ? 
+        '<p class="mb-1 text-success"><em>Precise GPS location</em></p>' :
+        userLocation.is_local ? '<p class="mb-1 text-muted"><em>Default location (local development)</em></p>' :
+        '<p class="mb-1 text-info"><em>IP-based location</em></p>';
+    
+    const popupContent = `
+        <div class="map-popup">
+            <h6><strong>Your Location</strong></h6>
+            <p class="mb-1"><strong>City:</strong> ${userLocation.city || 'Unknown'}</p>
+            <p class="mb-1"><strong>Country:</strong> ${userLocation.country || 'Unknown'}</p>
+            <p class="mb-1"><strong>Source:</strong> ${userLocation.ip || 'Unknown'}</p>
+            ${accuracyText}
+            ${locationType}
+        </div>
+    `;
+    
+    // Create a distinctive marker for user location with animation
+    const userIcon = L.divIcon({
+        html: '<div style="background: #007bff; border: 3px solid white; border-radius: 50%; width: 16px; height: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); animation: pulse 2s infinite;"></div>',
+        iconSize: [16, 16],
+        className: 'user-location-marker'
+    });
+    
+    const marker = L.marker([userLocation.lat, userLocation.lon], {
+        icon: userIcon
+    }).bindPopup(popupContent);
+    
+    marker.addTo(map);
+    markers.push(marker);
+    
+    // Add a circle to show accuracy if available
+    if (userLocation.accuracy) {
+        const accuracyCircle = L.circle([userLocation.lat, userLocation.lon], {
+            radius: userLocation.accuracy,
+            fillColor: '#007bff',
+            fillOpacity: 0.1,
+            color: '#007bff',
+            weight: 1
+        }).addTo(map);
+        markers.push(accuracyCircle);
+    }
 }
 
 function addConnectionLine(conn) {
@@ -263,4 +364,19 @@ function refreshMap() {
 .latency-good { color: #28a745; }
 .latency-medium { color: #ffc107; }
 .latency-bad { color: #dc3545; }
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 0.7;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
 </style>

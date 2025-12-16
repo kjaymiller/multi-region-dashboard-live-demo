@@ -20,8 +20,8 @@ class DatabaseConnection:
     database: str
     username: str
     password: str | None = field(repr=False, default=None)  # Plain text for input, not stored
-    password_hash: str | None = field(repr=False, default=None)    # Hashed password
-    salt: str | None = field(repr=False, default=None)        # Salt for password
+    password_hash: str | None = field(repr=False, default=None)  # Hashed password
+    salt: str | None = field(repr=False, default=None)  # Salt for password
     ssl_mode: str = "require"
     region: str | None = None
     cloud_provider: str | None = None
@@ -61,38 +61,56 @@ class DatabaseManager:
             salt = secrets.token_hex(16)
             password_hash = bcrypt.hashpw(
                 connection.password.encode(),
-                bcrypt.gensalt(rounds=12)  # Using bcrypt with rounds=12
+                bcrypt.gensalt(rounds=12),  # Using bcrypt with rounds=12
             ).decode()
 
             async with pool.acquire() as conn:
                 if connection.id and await self._connection_exists(connection.id):
                     # Update existing connection
-                    await conn.execute("""
-                        UPDATE database_connections 
+                    await conn.execute(
+                        """
+                        UPDATE database_connections
                         SET name = $1, host = $2, port = $3, database_name = $4,
-                            username = $5, password_hash = $6, salt = $7, 
+                            username = $5, password_hash = $6, salt = $7,
                             ssl_mode = $8, region = $9, cloud_provider = $10,
                             is_active = $11, updated_at = CURRENT_TIMESTAMP
                         WHERE id = $12
                     """,
-                        connection.name, connection.host, connection.port, connection.database,
-                        connection.username, password_hash, salt, connection.ssl_mode,
-                        connection.region, connection.cloud_provider, connection.is_active,
-                        connection.id
+                        connection.name,
+                        connection.host,
+                        connection.port,
+                        connection.database,
+                        connection.username,
+                        password_hash,
+                        salt,
+                        connection.ssl_mode,
+                        connection.region,
+                        connection.cloud_provider,
+                        connection.is_active,
+                        connection.id,
                     )
                 else:
                     # Create new connection
                     conn_id = connection.id or f"db_{secrets.token_hex(8)}"
-                    await conn.execute("""
-                        INSERT INTO database_connections 
-                        (id, name, host, port, database_name, username, password_hash, 
+                    await conn.execute(
+                        """
+                        INSERT INTO database_connections
+                        (id, name, host, port, database_name, username, password_hash,
                          salt, ssl_mode, region, cloud_provider, is_active)
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                     """,
-                        conn_id, connection.name, connection.host, connection.port,
-                        connection.database, connection.username, password_hash, salt,
-                        connection.ssl_mode, connection.region, connection.cloud_provider,
-                        connection.is_active
+                        conn_id,
+                        connection.name,
+                        connection.host,
+                        connection.port,
+                        connection.database,
+                        connection.username,
+                        password_hash,
+                        salt,
+                        connection.ssl_mode,
+                        connection.region,
+                        connection.cloud_provider,
+                        connection.is_active,
                     )
                     connection.id = conn_id
 
@@ -109,8 +127,7 @@ class DatabaseManager:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             result = await conn.fetchval(
-                "SELECT 1 FROM database_connections WHERE id = $1",
-                connection_id
+                "SELECT 1 FROM database_connections WHERE id = $1", connection_id
             )
             return result is not None
 
@@ -119,30 +136,33 @@ class DatabaseManager:
         try:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
-                row = await conn.fetchrow("""
-                    SELECT id, name, host, port, database_name, username, 
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, name, host, port, database_name, username,
                            password_hash, salt, ssl_mode, region, cloud_provider,
                            is_active, created_at, updated_at
-                    FROM database_connections 
+                    FROM database_connections
                     WHERE id = $1 AND is_active = true
-                """, connection_id)
+                """,
+                    connection_id,
+                )
 
                 if row:
                     return DatabaseConnection(
-                        id=row['id'],
-                        name=row['name'],
-                        host=row['host'],
-                        port=row['port'],
-                        database=row['database_name'],
-                        username=row['username'],
-                        password_hash=row['password_hash'],
-                        salt=row['salt'],
-                        ssl_mode=row['ssl_mode'],
-                        region=row['region'],
-                        cloud_provider=row['cloud_provider'],
-                        is_active=row['is_active'],
-                        created_at=row['created_at'].isoformat() if row['created_at'] else None,
-                        updated_at=row['updated_at'].isoformat() if row['updated_at'] else None,
+                        id=row["id"],
+                        name=row["name"],
+                        host=row["host"],
+                        port=row["port"],
+                        database=row["database_name"],
+                        username=row["username"],
+                        password_hash=row["password_hash"],
+                        salt=row["salt"],
+                        ssl_mode=row["ssl_mode"],
+                        region=row["region"],
+                        cloud_provider=row["cloud_provider"],
+                        is_active=row["is_active"],
+                        created_at=row["created_at"].isoformat() if row["created_at"] else None,
+                        updated_at=row["updated_at"].isoformat() if row["updated_at"] else None,
                     )
                 return None
         except Exception:
@@ -153,10 +173,7 @@ class DatabaseManager:
         try:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
-                await conn.execute(
-                    "DELETE FROM database_connections WHERE id = $1",
-                    connection_id
-                )
+                await conn.execute("DELETE FROM database_connections WHERE id = $1", connection_id)
             return True
         except Exception:
             return False
@@ -166,39 +183,45 @@ class DatabaseManager:
         try:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
-                rows = await conn.fetch("""
+                rows = await conn.fetch(
+                    """
                     SELECT id, name, host, port, database_name, username,
                            password_hash, salt, ssl_mode, region, cloud_provider,
                            is_active, created_at, updated_at
-                    FROM database_connections 
+                    FROM database_connections
                     WHERE is_active = true
                     ORDER BY created_at DESC
-                """)
+                """
+                )
 
                 connections = []
                 for row in rows:
-                    connections.append(DatabaseConnection(
-                        id=row['id'],
-                        name=row['name'],
-                        host=row['host'],
-                        port=row['port'],
-                        database=row['database_name'],
-                        username=row['username'],
-                        password_hash=row['password_hash'],
-                        salt=row['salt'],
-                        ssl_mode=row['ssl_mode'],
-                        region=row['region'],
-                        cloud_provider=row['cloud_provider'],
-                        is_active=row['is_active'],
-                        created_at=row['created_at'].isoformat() if row['created_at'] else None,
-                        updated_at=row['updated_at'].isoformat() if row['updated_at'] else None,
-                    ))
+                    connections.append(
+                        DatabaseConnection(
+                            id=row["id"],
+                            name=row["name"],
+                            host=row["host"],
+                            port=row["port"],
+                            database=row["database_name"],
+                            username=row["username"],
+                            password_hash=row["password_hash"],
+                            salt=row["salt"],
+                            ssl_mode=row["ssl_mode"],
+                            region=row["region"],
+                            cloud_provider=row["cloud_provider"],
+                            is_active=row["is_active"],
+                            created_at=row["created_at"].isoformat() if row["created_at"] else None,
+                            updated_at=row["updated_at"].isoformat() if row["updated_at"] else None,
+                        )
+                    )
 
                 return connections
         except Exception:
             return []
 
-    async def test_connection_with_password(self, connection: DatabaseConnection, password: str) -> dict:
+    async def test_connection_with_password(
+        self, connection: DatabaseConnection, password: str
+    ) -> dict:
         """Test a database connection using provided password."""
         import time
 
@@ -230,12 +253,14 @@ class DatabaseManager:
                     )
                     conn = await asyncpg.connect(test_dsn, ssl=False)
 
-                result = await conn.fetchrow("""
+                result = await conn.fetchrow(
+                    """
                     SELECT
                         inet_server_addr()::text AS server_ip,
                         pg_backend_pid() AS backend_pid,
                         version() AS pg_version
-                """)
+                """
+                )
                 latency_ms = (time.perf_counter() - start) * 1000
 
                 await conn.close()

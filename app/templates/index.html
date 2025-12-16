@@ -16,8 +16,11 @@
     <!-- Database Connections Management -->
     <div id="database-connections-container"
          hx-get="/api/db/connections"
-         hx-trigger="load, connection-created from:body, connection-error from:body"
+         hx-trigger="load, connection-created from:body, connection-test-failed from:body, connection-error from:body"
          hx-swap="innerHTML"></div>
+
+    <!-- Database Testing Dashboard -->
+    {% include "partials/database_testing_dashboard.html" %}
 
     <!-- Geographic Map View -->
     {% include "partials/map_view.html" %}

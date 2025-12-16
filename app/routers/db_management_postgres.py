@@ -1,6 +1,5 @@
 """API endpoints for database connection management using PostgreSQL backend."""
 
-
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -55,19 +54,21 @@ async def list_connections(request: Request):
     # Convert to dict for template rendering, exclude sensitive fields
     connections_data = []
     for conn in connections:
-        connections_data.append({
-            "id": conn.id,
-            "name": conn.name,
-            "host": conn.host,
-            "port": conn.port,
-            "database": conn.database,
-            "username": conn.username,
-            "ssl_mode": conn.ssl_mode,
-            "region": conn.region,
-            "cloud_provider": conn.cloud_provider,
-            "is_active": conn.is_active,
-            "created_at": conn.created_at,
-        })
+        connections_data.append(
+            {
+                "id": conn.id,
+                "name": conn.name,
+                "host": conn.host,
+                "port": conn.port,
+                "database": conn.database,
+                "username": conn.username,
+                "ssl_mode": conn.ssl_mode,
+                "region": conn.region,
+                "cloud_provider": conn.cloud_provider,
+                "is_active": conn.is_active,
+                "created_at": conn.created_at,
+            }
+        )
 
     return templates.TemplateResponse(
         "partials/database_connections.html",
@@ -103,9 +104,10 @@ async def create_connection(request: Request, conn_data: DatabaseCreateRequest):
     if not success:
         # Return error HTML
         from fastapi.responses import HTMLResponse
+
         return HTMLResponse(
             content='<div class="alert alert-danger">Failed to save database connection</div>',
-            headers={"HX-Trigger": "connection-error"}
+            headers={"HX-Trigger": "connection-error"},
         )
 
     # Test connection using the provided password
@@ -114,19 +116,21 @@ async def create_connection(request: Request, conn_data: DatabaseCreateRequest):
     if not test_result.get("success", False):
         # Return test failure HTML
         from fastapi.responses import HTMLResponse
+
         return HTMLResponse(
             content=f'<div class="alert alert-warning">Connection test failed: {test_result.get("error", "Unknown error")}</div>',
-            headers={"HX-Trigger": "connection-test-failed"}
+            headers={"HX-Trigger": "connection-test-failed"},
         )
 
     # Return success HTML
     from fastapi.responses import HTMLResponse
+
     return HTMLResponse(
         content=f'<div class="alert alert-success">Database connection "{connection.name}" created and tested successfully!</div>',
         headers={
             "HX-Trigger": "connection-created",
-            "HX-Trigger-After-Swap": "htmx.trigger('#database-connections-container', 'load'); document.getElementById('connection-form-container').style.display='none';"
-        }
+            "HX-Trigger-After-Swap": "htmx.trigger('#database-connections-container', 'load'); document.getElementById('connection-form-container').style.display='none';",
+        },
     )
 
 
@@ -145,10 +149,12 @@ async def test_connection(connection_id: str):
     # 2. Use a secure vault for password storage
     # 3. Store encrypted passwords instead of hashes
 
-    return JSONResponse(content={
-        "success": False,
-        "error": "Password testing requires re-entering credentials (security limitation of hash storage)"
-    })
+    return JSONResponse(
+        content={
+            "success": False,
+            "error": "Password testing requires re-entering credentials (security limitation of hash storage)",
+        }
+    )
 
 
 @router.put("/connections/{connection_id}")

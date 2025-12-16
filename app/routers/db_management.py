@@ -1,6 +1,6 @@
 """API endpoints for database connection management."""
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -54,19 +54,21 @@ async def list_connections(request: Request):
     # Convert to dict for template rendering, exclude passwords
     connections_data = []
     for conn in connections:
-        connections_data.append({
-            "id": conn.id,
-            "name": conn.name,
-            "host": conn.host,
-            "port": conn.port,
-            "database": conn.database,
-            "username": conn.username,
-            "ssl_mode": conn.ssl_mode,
-            "region": conn.region,
-            "cloud_provider": conn.cloud_provider,
-            "is_active": conn.is_active,
-            "created_at": conn.created_at,
-        })
+        connections_data.append(
+            {
+                "id": conn.id,
+                "name": conn.name,
+                "host": conn.host,
+                "port": conn.port,
+                "database": conn.database,
+                "username": conn.username,
+                "ssl_mode": conn.ssl_mode,
+                "region": conn.region,
+                "cloud_provider": conn.cloud_provider,
+                "is_active": conn.is_active,
+                "created_at": conn.created_at,
+            }
+        )
 
     return templates.TemplateResponse(
         "partials/database_connections.html",
@@ -75,7 +77,18 @@ async def list_connections(request: Request):
 
 
 @router.post("/connections")
-async def create_connection(request: Request, conn_data: DatabaseCreateRequest):
+async def create_connection(
+    request: Request,
+    name: str = Form(...),
+    host: str = Form(...),
+    port: int = Form(...),
+    database: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
+    ssl_mode: str = Form(default="require"),
+    region: str = Form(default=""),
+    cloud_provider: str = Form(default=""),
+):
     """Create a new database connection."""
     db_manager = get_db_manager()
 
@@ -85,15 +98,15 @@ async def create_connection(request: Request, conn_data: DatabaseCreateRequest):
     # Create database connection
     connection = DatabaseConnection(
         id=conn_id,
-        name=conn_data.name,
-        host=conn_data.host,
-        port=conn_data.port,
-        database=conn_data.database,
-        username=conn_data.username,
-        password=conn_data.password,
-        ssl_mode=conn_data.ssl_mode,
-        region=conn_data.region,
-        cloud_provider=conn_data.cloud_provider,
+        name=name,
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=password,
+        ssl_mode=ssl_mode,
+        region=region if region else None,
+        cloud_provider=cloud_provider if cloud_provider else None,
     )
 
     # Save connection
@@ -103,47 +116,69 @@ async def create_connection(request: Request, conn_data: DatabaseCreateRequest):
         # Return error HTML
         return templates.TemplateResponse(
             "partials/connection_result.html",
-            {"request": request, "result": {"success": False, "error": "Failed to save database connection"}},
-            {"HX-Trigger": "connection-error"}
+            {
+                "request": request,
+                "result": {"success": False, "error": "Failed to save database connection"},
+            },
+            headers={"HX-Trigger": "connection-error"},
         )
 
     # Test connection
-    test_result = db_manager.test_connection(connection)
+    test_result = await db_manager.test_connection(connection)
 
     if not test_result.get("success", False):
         # Return test failure HTML but still refresh the list
         return templates.TemplateResponse(
             "partials/connection_result.html",
             {"request": request, "result": test_result},
-            {
-                "HX-Trigger": "connection-test-failed",
-                "HX-Trigger-After-Swap": "htmx.trigger('#database-connections-container', 'load'); document.getElementById('connection-form-container').style.display='none';"
-            }
+            headers={"HX-Trigger": "connection-test-failed"},
         )
 
     # Return success HTML
     response = templates.TemplateResponse(
         "partials/connection_result.html",
         {"request": request, "result": test_result},
-        {
-            "HX-Trigger": "connection-created",
-            "HX-Trigger-After-Swap": "htmx.trigger('#database-connections-container', 'load'); document.getElementById('connection-form-container').style.display='none';"
-        }
+        headers={"HX-Trigger": "connection-created"},
     )
 
     return response
 
 
 @router.post("/connections/{connection_id}/test")
-async def test_connection(connection_id: str):
-    """Test a database connection."""
+async def test_connection(
+    connection_id: str,
+    user_lat: float | None = None,
+    user_lon: float | None = None,
+):
+    """Test a database connection with optional user location for distance calculation."""
+    from app.location_service import (
+        calculate_distance_to_region,
+        estimate_latency_from_distance,
+        get_region_location,
+    )
+
     db_manager = get_db_manager()
     connection = db_manager.get_connection(connection_id)
 
     if not connection:
         raise HTTPException(status_code=404, detail="Database connection not found")
 
-    result = db_manager.test_connection(connection)
+    result = await db_manager.test_connection(connection)
+
+    # Add location-aware metrics if user location provided
+    if result.get("success") and user_lat is not None and user_lon is not None:
+        distance_km = calculate_distance_to_region(user_lat, user_lon, connection.region)
+        region_loc = get_region_location(connection.region)
+
+        if distance_km is not None:
+            result["distance_km"] = round(distance_km, 2)
+            result["estimated_latency_ms"] = estimate_latency_from_distance(distance_km)
+
+        if region_loc:
+            result["region_location"] = {
+                "city": region_loc["city"],
+                "country": region_loc["country"],
+            }
 
     return JSONResponse(content=result)
 
@@ -190,7 +225,7 @@ async def update_connection(connection_id: str, conn_data: DatabaseUpdateRequest
 
 
 @router.delete("/connections/{connection_id}")
-async def delete_connection(connection_id: str):
+async def delete_connection(request: Request, connection_id: str):
     """Delete a database connection."""
     db_manager = get_db_manager()
     connection = db_manager.get_connection(connection_id)
@@ -203,12 +238,10 @@ async def delete_connection(connection_id: str):
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete database connection")
 
-    return JSONResponse(
-        content={
-            "success": True,
-            "message": "Database connection deleted successfully",
-        }
-    )
+    # Return empty response for HTMX to swap out the table row
+    from fastapi.responses import Response
+
+    return Response(content="", status_code=200)
 
 
 @router.get("/connections/form")

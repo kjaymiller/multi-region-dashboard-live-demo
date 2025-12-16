@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y \
 # Copy project files
 COPY pyproject.toml uv.lock ./
 COPY app/ ./app/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
+COPY docker-entrypoint.sh ./
 
 # Install uv
 RUN pip install uv
@@ -20,8 +23,11 @@ RUN pip install uv
 # Install dependencies
 RUN uv sync --frozen
 
+# Make entrypoint script executable
+RUN chmod +x docker-entrypoint.sh
+
 # Expose port
 EXPOSE 8000
 
-# Run the application
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the entrypoint script
+CMD ["./docker-entrypoint.sh"]

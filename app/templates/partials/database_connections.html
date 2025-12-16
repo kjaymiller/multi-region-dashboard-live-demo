@@ -46,9 +46,19 @@
                                 <td>{{ conn.database }}</td>
                                 <td>
                                     {% if conn.region %}
-                                        <span class="badge bg-light text-dark">{{ conn.region }}</span>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="badge bg-light text-dark">{{ conn.region }}</span>
+                                            <button class="btn btn-sm btn-outline-secondary" 
+                                                    onclick="showLocationInfo('{{ conn.region }}')"
+                                                    title="Show location details">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-geo-alt" viewBox="0 0 16 16">
+                                                    <path d="M12.166 8.94c-.524 1.062-1.234 2.12-1.96 3.07A31.493 31.493 0 0 1 8 14.58a31.481 31.481 0 0 1-2.206-2.57c-.726-.95-1.436-2.008-1.96-3.07C3.304 7.867 3 6.862 3 6a5 5 0 0 1 10 0c0 .862-.305 1.867-.834 2.94zM8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10z"/>
+                                                    <path d="M8 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 1a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
+                                                </svg>
+                                            </button>
+                                        </div>
                                         {% if conn.cloud_provider %}
-                                        <small class="text-muted d-block">{{ conn.cloud_provider }}</small>
+                                        <small class="text-muted">{{ conn.cloud_provider }}</small>
                                         {% endif %}
                                     {% else %}
                                         <span class="text-muted">-</span>
@@ -114,3 +124,82 @@
 
 <!-- Connection Details Modal -->
 <div id="connection-details"></div>
+
+<!-- Location Info Modal -->
+<div class="modal fade" id="locationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Location Information</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="location-info-content">
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function showLocationInfo(region) {
+    const modal = new bootstrap.Modal(document.getElementById('locationModal'));
+    const content = document.getElementById('location-info-content');
+    
+    modal.show();
+    
+    try {
+        const response = await fetch(`/api/region-info/${region}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            content.innerHTML = `
+                <div class="row">
+                    <div class="col-12">
+                        <h6>Region: ${region}</h6>
+                        <p class="mb-2"><strong>Coordinates:</strong> ${data.coordinates.lat.toFixed(4)}, ${data.coordinates.lng.toFixed(4)}</p>
+                        <p class="mb-2"><strong>Approximate Location:</strong> ${data.description || 'Unknown'}</p>
+                        <div class="mt-3">
+                            <a href="https://www.google.com/maps?q=${data.coordinates.lat},${data.coordinates.lng}" 
+                               target="_blank" class="btn btn-sm btn-outline-primary">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-map" viewBox="0 0 16 16">
+                                    <path fill-rule="evenodd" d="M15.817 6.113a.5.5 0 0 1 .07.704l-4.5 5.5a.5.5 0 0 1-.74.037L7.06 10.277 5.384 11.95a.5.5 0 0 1-.362.153h-2.5a.5.5 0 0 1-.452-.714l4-7.5a.5.5 0 0 1 .866.018l1.918 3.618 3.096-1.504a.5.5 0 0 1 .531.09zm-4.734-2.466L6.504 5.75a.5.5 0 0 1-.553.09l-2.682-1.26 1.833 3.442h1.584l1.95-1.958a.5.5 0 0 1 .618-.08z"/>
+                                </svg>
+                                View on Map
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            content.innerHTML = `
+                <div class="alert alert-warning">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-exclamation-triangle" viewBox="0 0 16 16">
+                        <path d="M7.938 2.016A.13.13 0 0 1 8.002 2a.13.13 0 0 1 .063.016.146.146 0 0 1 .054.057l6.857 11.667c.036.06.035.124.002.183a.163.163 0 0 1-.054.06.116.116 0 0 1-.066.017H1.146a.115.115 0 0 1-.066-.017.163.163 0 0 1-.054-.06.176.176 0 0 1 .002-.183L7.884 2.073a.147.147 0 0 1 .054-.057zm1.044-.45a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566z"/>
+                        <path d="M7.002 12a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 5.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995z"/>
+                    </svg>
+                    Region "${region}" not found in our database
+                </div>
+            `;
+        }
+    } catch (error) {
+        content.innerHTML = `
+            <div class="alert alert-danger">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-x-circle" viewBox="0 0 16 16">
+                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                    <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
+                </svg>
+                Error loading location information
+            </div>
+        `;
+    }
+}
+</script>

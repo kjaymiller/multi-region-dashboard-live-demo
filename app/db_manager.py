@@ -170,55 +170,58 @@ class DatabaseManager:
         except Exception:
             return False
 
-    def test_connection(self, connection: DatabaseConnection) -> dict:
+    async def test_connection(self, connection: DatabaseConnection) -> dict:
         """Test a database connection."""
-        import asyncio
+        import ssl
         import time
 
         import asyncpg
 
-        async def _test():
-            try:
-                start = time.perf_counter()
+        try:
+            start = time.perf_counter()
 
-                # Use SSL for remote connections, disable for local development
-                ssl_mode = (
-                    "require"
-                    if not any(
-                        local_host in connection.host.lower()
-                        for local_host in ["localhost", "127.0.0.1", "postgres:"]
-                    )
-                    else None
-                )
+            # Use SSL for remote connections, disable for local development
+            use_ssl = not any(
+                local_host in connection.host.lower()
+                for local_host in ["localhost", "127.0.0.1", "postgres:"]
+            )
 
-                conn = await asyncpg.connect(
-                    dsn=connection.dsn,
-                    ssl=ssl_mode is not None
-                )
+            # Create SSL context that doesn't verify certificates for now
+            ssl_context = None
+            if use_ssl:
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
 
-                result = await conn.fetchrow(
-                    """
-                    SELECT
-                        inet_server_addr()::text AS server_ip,
-                        pg_backend_pid() AS backend_pid,
-                        version() AS pg_version
-                    """
-                )
-                latency_ms = (time.perf_counter() - start) * 1000
+            # Build DSN without SSL parameter
+            dsn = (
+                f"postgresql://{connection.username}:{connection.password}@"
+                f"{connection.host}:{connection.port}/{connection.database}"
+            )
 
-                await conn.close()
+            conn = await asyncpg.connect(dsn=dsn, ssl=ssl_context)
 
-                return {
-                    "success": True,
-                    "server_ip": result["server_ip"],
-                    "backend_pid": result["backend_pid"],
-                    "pg_version": result["pg_version"],
-                    "latency_ms": round(latency_ms, 2),
-                }
-            except Exception as e:
-                return {"success": False, "error": str(e)}
+            result = await conn.fetchrow(
+                """
+                SELECT
+                    inet_server_addr()::text AS server_ip,
+                    pg_backend_pid() AS backend_pid,
+                    version() AS pg_version
+                """
+            )
+            latency_ms = (time.perf_counter() - start) * 1000
 
-        return asyncio.run(_test())
+            await conn.close()
+
+            return {
+                "success": True,
+                "server_ip": result["server_ip"],
+                "backend_pid": result["backend_pid"],
+                "pg_version": result["pg_version"],
+                "latency_ms": round(latency_ms, 2),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     def get_all_connections(self) -> list[DatabaseConnection]:
         """Get all active database connections."""

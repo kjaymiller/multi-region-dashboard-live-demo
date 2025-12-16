@@ -91,24 +91,11 @@ setup: install-dev setup-env
     @echo "  1. Update .env with your credentials"
     @echo "  2. Run the app: just dev"
 
-# Database migration commands
-migrate:
-    uv run alembic upgrade head
-
-migrate-create:
-    uv run alembic revision --autogenerate -m "$(message)"
-
-migrate-downgrade:
-    uv run alembic downgrade -1
-
-migrate-current:
-    uv run alembic current
-
-migrate-history:
-    uv run alembic history
-
-migrate-reset:
-    uv run alembic downgrade base && uv run alembic upgrade head
+# Database setup commands
+db-setup:
+    @echo "Setting up database schema..."
+    @test -f .env || (echo "❌ .env file not found! Run 'just setup-env' first" && exit 1)
+    uv run python setup_database.py
 
 # Restart development server (useful with tmux/screen)
 restart:

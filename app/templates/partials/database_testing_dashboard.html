@@ -1,0 +1,358 @@
+<!-- Database Testing Dashboard -->
+<div class="row mb-4" x-data="databaseTestingDashboard()">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0">Database Testing & Health Checks</h5>
+                    <small class="text-muted">Monitor and test all database connections</small>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-primary" @click="testAllDatabases()">
+                        <span class="spinner-border spinner-border-sm me-1" x-show="loading.all"></span>
+                        Test All
+                    </button>
+                    <button class="btn btn-sm btn-success" @click="healthCheckAll()">
+                        <span class="spinner-border spinner-border-sm me-1" x-show="loading.health"></span>
+                        Health Check
+                    </button>
+                    <button class="btn btn-sm btn-info" @click="refreshSummary()">
+                        <span class="spinner-border spinner-border-sm me-1" x-show="loading.summary"></span>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Summary Cards -->
+                <div class="row mb-4" x-show="summary">
+                    <div class="col-md-3">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body">
+                                <h5 class="card-title">Total Databases</h5>
+                                <h3 class="card-text" x-text="summary.total_databases || 0"></h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-success text-white">
+                            <div class="card-body">
+                                <h5 class="card-title">Healthy</h5>
+                                <h3 class="card-text" x-text="summary.healthy_databases || 0"></h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-warning text-white">
+                            <div class="card-body">
+                                <h5 class="card-title">Slow</h5>
+                                <h3 class="card-text" x-text="summary.slow_databases || 0"></h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-danger text-white">
+                            <div class="card-body">
+                                <h5 class="card-title">Unhealthy</h5>
+                                <h3 class="card-text" x-text="summary.unhealthy_databases || 0"></h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Database List -->
+                <div class="table-responsive" x-show="databases.length > 0">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Database</th>
+                                <th>Provider</th>
+                                <th>Region</th>
+                                <th>Connection</th>
+                                <th>Latency</th>
+                                <th>Health</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="db in databases" :key="db.id">
+                                <tr>
+                                    <td>
+                                        <div>
+                                            <strong x-text="db.name"></strong>
+                                            <br>
+                                            <small class="text-muted" x-text="`${db.host}:${db.port}`"></small>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge" 
+                                              :class="getProviderBadgeClass(db.provider)"
+                                              x-text="db.provider"></span>
+                                    </td>
+                                    <td>
+                                        <span class="text-muted" x-text="db.region"></span>
+                                    </td>
+                                    <td>
+                                        <span class="badge" 
+                                              :class="db.connection_test?.success ? 'bg-success' : 'bg-danger'"
+                                              x-text="db.connection_test?.success ? 'Connected' : 'Failed'"></span>
+                                        <br>
+                                        <small class="text-muted" 
+                                               x-show="db.connection_test?.latency_ms"
+                                               x-text="`${db.connection_test.latency_ms}ms`"></small>
+                                    </td>
+                                    <td>
+                                        <div x-show="db.latency_test?.success">
+                                            <span class="badge" 
+                                                  :class="getLatencyBadgeClass(db.latency_test.avg_ms)">
+                                                <span x-text="`${Math.round(db.latency_test.avg_ms)}ms`"></span>
+                                            </span>
+                                            <br>
+                                            <small class="text-muted">
+                                                Min: <span x-text="Math.round(db.latency_test.min_ms)"></span>ms / 
+                                                Max: <span x-text="Math.round(db.latency_test.max_ms)"></span>ms
+                                            </small>
+                                        </div>
+                                        <div x-show="!db.latency_test?.success">
+                                            <span class="badge bg-secondary">Not tested</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div x-show="db.health_metrics?.success">
+                                            <div class="small">
+                                                <div>Cache: <span x-text="db.health_metrics.cache_hit_ratio || 'N/A'"></span>%</div>
+                                                <div>Connections: <span x-text="db.health_metrics.active_connections || 'N/A'"></span></div>
+                                            </div>
+                                        </div>
+                                        <div x-show="!db.health_metrics?.success">
+                                            <span class="badge bg-secondary">Not checked</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-outline-primary" 
+                                                    @click="testDatabase(db.id)">
+                                                Test
+                                            </button>
+                                            <button class="btn btn-outline-success" 
+                                                    @click="healthCheck(db.id)">
+                                                Health
+                                            </button>
+                                            <button class="btn btn-outline-info" 
+                                                    @click="latencyTest(db.id)">
+                                                Latency
+                                            </button>
+                                            <button class="btn btn-outline-warning" 
+                                                    @click="loadTest(db.id)">
+                                                Load
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Loading State -->
+                <div class="text-center py-4" x-show="!databases.length && !loading.all">
+                    <p class="text-muted">No database connections found. Configure some databases to get started.</p>
+                </div>
+
+                <!-- Error Messages -->
+                <div class="alert alert-danger" x-show="error" x-text="error"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function databaseTestingDashboard() {
+    return {
+        databases: [],
+        summary: null,
+        loading: {
+            all: false,
+            health: false,
+            summary: false
+        },
+        error: null,
+
+        init() {
+            this.refreshSummary();
+        },
+
+        async refreshSummary() {
+            this.loading.summary = true;
+            this.error = null;
+            
+            try {
+                const [summaryResponse, healthResponse] = await Promise.all([
+                    fetch('/api/database-summary'),
+                    fetch('/api/health-all-databases')
+                ]);
+                
+                const summary = await summaryResponse.json();
+                const health = await healthResponse.json();
+                
+                this.summary = {
+                    ...summary,
+                    ...health,
+                    healthy_databases: health.healthy_databases,
+                    unhealthy_databases: health.unhealthy_databases,
+                    slow_databases: 0 // Calculate from actual data
+                };
+                
+                this.databases = health.results || [];
+                
+            } catch (error) {
+                this.error = `Failed to load database summary: ${error.message}`;
+                console.error('Error loading summary:', error);
+            } finally {
+                this.loading.summary = false;
+            }
+        },
+
+        async testAllDatabases() {
+            this.loading.all = true;
+            
+            try {
+                const response = await fetch('/api/test-all-databases');
+                const result = await response.json();
+                
+                if (response.ok) {
+                    // Update database results
+                    result.results.forEach(testResult => {
+                        const db = this.databases.find(d => d.id === testResult.id);
+                        if (db) {
+                            db.connection_test = testResult.test_result;
+                        }
+                    });
+                } else {
+                    this.error = result.error || 'Failed to test databases';
+                }
+            } catch (error) {
+                this.error = `Failed to test databases: ${error.message}`;
+            } finally {
+                this.loading.all = false;
+            }
+        },
+
+        async healthCheckAll() {
+            this.loading.health = true;
+            
+            try {
+                const response = await fetch('/api/health-all-databases');
+                const result = await response.json();
+                
+                if (response.ok) {
+                    this.databases = result.results || [];
+                } else {
+                    this.error = result.error || 'Failed to get health checks';
+                }
+            } catch (error) {
+                this.error = `Failed to get health checks: ${error.message}`;
+            } finally {
+                this.loading.health = false;
+            }
+        },
+
+        async testDatabase(dbId) {
+            try {
+                const response = await fetch(`/api/test-database/${dbId}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const db = this.databases.find(d => d.id === dbId);
+                    if (db) {
+                        db.connection_test = result;
+                    }
+                } else {
+                    this.error = result.error || 'Failed to test database';
+                }
+            } catch (error) {
+                this.error = `Failed to test database: ${error.message}`;
+            }
+        },
+
+        async healthCheck(dbId) {
+            try {
+                const response = await fetch(`/api/health-check/${dbId}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const db = this.databases.find(d => d.id === dbId);
+                    if (db) {
+                        db.health_metrics = result;
+                    }
+                } else {
+                    this.error = result.error || 'Failed to get health metrics';
+                }
+            } catch (error) {
+                this.error = `Failed to get health metrics: ${error.message}`;
+            }
+        },
+
+        async latencyTest(dbId) {
+            try {
+                const response = await fetch(`/api/latency-test/${dbId}?iterations=5`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const db = this.databases.find(d => d.id === dbId);
+                    if (db) {
+                        db.latency_test = result;
+                    }
+                } else {
+                    this.error = result.error || 'Failed to test latency';
+                }
+            } catch (error) {
+                this.error = `Failed to test latency: ${error.message}`;
+            }
+        },
+
+        async loadTest(dbId) {
+            try {
+                const response = await fetch(`/api/load-test/${dbId}?concurrent=10`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const db = this.databases.find(d => d.id === dbId);
+                    if (db) {
+                        db.load_test = result;
+                    }
+                } else {
+                    this.error = result.error || 'Failed to run load test';
+                }
+            } catch (error) {
+                this.error = `Failed to run load test: ${error.message}`;
+            }
+        },
+
+        getProviderBadgeClass(provider) {
+            const classes = {
+                'AWS': 'bg-warning text-dark',
+                'GCP': 'bg-info text-white',
+                'Azure': 'bg-primary text-white',
+                'Aiven': 'bg-danger text-white',
+                'DigitalOcean': 'bg-success text-white'
+            };
+            return classes[provider] || 'bg-secondary text-white';
+        },
+
+        getLatencyBadgeClass(latency) {
+            if (!latency) return 'bg-secondary';
+            if (latency < 100) return 'bg-success';
+            if (latency < 200) return 'bg-warning text-dark';
+            return 'bg-danger';
+        }
+    };
+}
+</script>
