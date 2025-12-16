@@ -8,9 +8,13 @@ from app.chat import get_chat_response
 from app.config import get_database
 from app.database import (
     get_all_recent_checks,
+    get_connection_health_metrics,
     get_health_metrics,
     load_test,
+    measure_connection_latency,
     measure_latency,
+    run_connection_load_test,
+    save_health_metrics_check,
     test_connection,
 )
 from app.db_manager import db_manager
@@ -225,12 +229,27 @@ async def get_database_health(connection_id: str):
         )
 
     try:
-        # For now, use the main database health check
-        # In a real implementation, you'd connect to the specific database
-        result = await get_health_metrics()
-        return JSONResponse(content=result)
+        # Get health metrics for the specific database connection
+        result = await get_connection_health_metrics(connection)
+
+        # Save health metrics to database for historical tracking
+        if result.get("success"):
+            try:
+                await save_health_metrics_check(result, connection_id)
+            except Exception as save_error:
+                result["warnings"].append(f"Failed to save health metrics: {str(save_error)}")
+
+        # Return appropriate HTTP status based on health check result
+        if result.get("success"):
+            return JSONResponse(content=result)
+        else:
+            return JSONResponse(content=result, status_code=503)
+
     except Exception as e:
-        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+        return JSONResponse(
+            content={"success": False, "error": f"Health check failed: {str(e)}", "connection_id": connection_id},
+            status_code=500
+        )
 
 
 @router.post("/latency-test/{connection_id}")
@@ -249,15 +268,14 @@ async def test_database_latency(connection_id: str, iterations: int = 5):
         )
 
     try:
-        # For now, use the main database latency test
-        result = await measure_latency(iterations)
+        result = await measure_connection_latency(connection, iterations)
         return JSONResponse(content=result)
     except Exception as e:
         return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
 
 
 @router.post("/load-test/{connection_id}")
-async def run_database_load_test(connection_id: str, concurrent: int = 10):
+async def run_database_load_test_endpoint(connection_id: str, concurrent: int = 10):
     """Run a load test against a specific database connection."""
     connection = db_manager.get_connection(connection_id)
     if not connection:
@@ -272,8 +290,7 @@ async def run_database_load_test(connection_id: str, concurrent: int = 10):
         )
 
     try:
-        # For now, use the main database load test
-        result = await load_test(concurrent)
+        result = await run_connection_load_test(connection, concurrent)
         return JSONResponse(content=result)
     except Exception as e:
         return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
@@ -328,12 +345,46 @@ async def health_check_all_databases():
     connections = db_manager.get_all_connections()
     results = []
 
+    # Create tasks for parallel health checks
+    health_check_tasks = []
     for conn in connections:
+        health_check_tasks.append(
+            {
+                "connection": conn,
+                "health_task": get_connection_health_metrics(conn),
+                "connection_test_task": db_manager.test_connection(conn),
+            }
+        )
+
+    # Execute all health checks in parallel
+    import asyncio
+    for task_data in health_check_tasks:
+        conn = task_data["connection"]
+        
         try:
-            # For now, use the main database health check
-            # In a real implementation, you'd connect to each specific database
-            health_result = await get_health_metrics()
-            connection_result = await db_manager.test_connection(conn)
+            # Wait for both health check and connection test
+            health_result, connection_result = await asyncio.gather(
+                task_data["health_task"],
+                task_data["connection_test_task"],
+                return_exceptions=True
+            )
+
+            # Handle health check result
+            if isinstance(health_result, Exception):
+                health_result = {"success": False, "error": str(health_result)}
+            
+            # Handle connection test result
+            if isinstance(connection_result, Exception):
+                connection_result = {"success": False, "error": str(connection_result)}
+
+            # Save health metrics to database for historical tracking
+            if health_result.get("success"):
+                try:
+                    await save_health_metrics_check(health_result, conn.id)
+                except Exception as save_error:
+                    if "warnings" not in health_result:
+                        health_result["warnings"] = []
+                    health_result["warnings"].append(f"Failed to save health metrics: {str(save_error)}")
 
             results.append(
                 {
@@ -353,6 +404,7 @@ async def health_check_all_databases():
                 }
             )
         except Exception as e:
+            # Fallback for any unexpected errors
             results.append(
                 {
                     "id": conn.id,

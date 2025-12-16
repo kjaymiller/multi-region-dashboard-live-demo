@@ -70,6 +70,7 @@
                                 <th>Connection</th>
                                 <th>Latency</th>
                                 <th>Health</th>
+                                <th>Load Test</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -102,17 +103,22 @@
                                     </td>
                                     <td>
                                         <div x-show="db.latency_test?.success">
-                                            <span class="badge" 
+                                            <span class="badge"
                                                   :class="getLatencyBadgeClass(db.latency_test.avg_ms)">
                                                 <span x-text="`${Math.round(db.latency_test.avg_ms)}ms`"></span>
                                             </span>
                                             <br>
                                             <small class="text-muted">
-                                                Min: <span x-text="Math.round(db.latency_test.min_ms)"></span>ms / 
+                                                Min: <span x-text="Math.round(db.latency_test.min_ms)"></span>ms /
                                                 Max: <span x-text="Math.round(db.latency_test.max_ms)"></span>ms
                                             </small>
                                         </div>
-                                        <div x-show="!db.latency_test?.success">
+                                        <div x-show="db.latency_test && !db.latency_test.success">
+                                            <span class="badge bg-danger">Failed</span>
+                                            <br>
+                                            <small class="text-muted" x-text="db.latency_test.error"></small>
+                                        </div>
+                                        <div x-show="!db.latency_test">
                                             <span class="badge bg-secondary">Not tested</span>
                                         </div>
                                     </td>
@@ -125,6 +131,27 @@
                                         </div>
                                         <div x-show="!db.health_metrics?.success">
                                             <span class="badge bg-secondary">Not checked</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div x-show="db.load_test?.success">
+                                            <span class="badge"
+                                                  :class="getLatencyBadgeClass(db.load_test.avg_ms)">
+                                                <span x-text="`${Math.round(db.load_test.avg_ms)}ms`"></span>
+                                            </span>
+                                            <br>
+                                            <small class="text-muted">
+                                                QPS: <span x-text="Math.round(db.load_test.queries_per_second)"></span> /
+                                                Concurrent: <span x-text="db.load_test.concurrent"></span>
+                                            </small>
+                                        </div>
+                                        <div x-show="db.load_test && !db.load_test.success">
+                                            <span class="badge bg-danger">Failed</span>
+                                            <br>
+                                            <small class="text-muted" x-text="db.load_test.error"></small>
+                                        </div>
+                                        <div x-show="!db.load_test">
+                                            <span class="badge bg-secondary">Not tested</span>
                                         </div>
                                     </td>
                                     <td>
@@ -297,12 +324,21 @@ function databaseTestingDashboard() {
         },
 
         async latencyTest(dbId) {
+            const iterations = prompt('How many iterations? (1-100)', '5');
+            if (!iterations) return; // User cancelled
+
+            const iterationsNum = parseInt(iterations);
+            if (isNaN(iterationsNum) || iterationsNum < 1 || iterationsNum > 100) {
+                this.error = 'Iterations must be between 1 and 100';
+                return;
+            }
+
             try {
-                const response = await fetch(`/api/latency-test/${dbId}?iterations=5`, {
+                const response = await fetch(`/api/latency-test/${dbId}?iterations=${iterationsNum}`, {
                     method: 'POST'
                 });
                 const result = await response.json();
-                
+
                 if (response.ok) {
                     const db = this.databases.find(d => d.id === dbId);
                     if (db) {
@@ -317,12 +353,21 @@ function databaseTestingDashboard() {
         },
 
         async loadTest(dbId) {
+            const concurrent = prompt('How many concurrent connections? (1-100)', '10');
+            if (!concurrent) return; // User cancelled
+
+            const concurrentNum = parseInt(concurrent);
+            if (isNaN(concurrentNum) || concurrentNum < 1 || concurrentNum > 100) {
+                this.error = 'Concurrent connections must be between 1 and 100';
+                return;
+            }
+
             try {
-                const response = await fetch(`/api/load-test/${dbId}?concurrent=10`, {
+                const response = await fetch(`/api/load-test/${dbId}?concurrent=${concurrentNum}`, {
                     method: 'POST'
                 });
                 const result = await response.json();
-                
+
                 if (response.ok) {
                     const db = this.databases.find(d => d.id === dbId);
                     if (db) {
