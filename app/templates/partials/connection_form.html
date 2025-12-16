@@ -8,7 +8,8 @@
     <form id="connection-form"
           hx-post="/api/db/connections"
           hx-target="#form-result"
-          hx-swap="innerHTML">
+          hx-swap="innerHTML"
+          hx-ext="json-enc">
         <div class="row">
             <div class="col-md-6 mb-3">
                 <label for="name" class="form-label">Connection Name *</label>

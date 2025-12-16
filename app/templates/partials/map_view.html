@@ -115,6 +115,12 @@ document.addEventListener('DOMContentLoaded', function() {
             filterMapMarkers();
         });
     });
+
+    window.addEventListener('database-tested', function(event) {
+        if (event.detail.coords) {
+            drawUserToDatabaseConnectionLine(event.detail.coords);
+        }
+    });
 });
 
 function initializeMap() {
@@ -149,7 +155,7 @@ async function loadMapData() {
         if (userLocationCoords) {
             console.log(`Drawing ${data.databases.length} user-to-database lines`);
             data.databases.forEach(db => {
-                addUserToDatabaseLine(db);
+                drawUserToDatabaseConnectionLine(db);
             });
         } else {
             console.log('✗ Skipping user lines - user location not yet available');
@@ -301,7 +307,7 @@ function addUserLocationMarker(userLocation) {
     }
 }
 
-function addUserToDatabaseLine(db) {
+function drawUserToDatabaseConnectionLine(db) {
     if (!userLocationCoords) {
         console.log('✗ Cannot draw line - user location not available');
         return;
@@ -322,10 +328,16 @@ function addUserToDatabaseLine(db) {
     if (estimatedLatency > 100) lineColor = '#ffc107'; // yellow for medium
     if (estimatedLatency > 200) lineColor = '#dc3545'; // red for far
 
+    const outline = L.polyline(coordinates, {
+        color: 'black',
+        weight: 5,
+        opacity: 0.5,
+    });
+
     const line = L.polyline(coordinates, {
         color: lineColor,
-        weight: 2,
-        opacity: 0.4,
+        weight: 3,
+        opacity: 0.7,
         dashArray: '5, 5'
     });
 
@@ -338,8 +350,13 @@ function addUserToDatabaseLine(db) {
         </div>
     `;
 
+    outline.bindPopup(popupContent);
     line.bindPopup(popupContent);
+    
+    outline.addTo(map);
     line.addTo(map);
+
+    userConnectionLines.push(outline);
     userConnectionLines.push(line);
 }
 

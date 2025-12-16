@@ -85,9 +85,9 @@
                                         </div>
                                     </td>
                                     <td>
-                                        <span class="badge" 
-                                              :class="getProviderBadgeClass(db.provider)"
-                                              x-text="db.provider"></span>
+                                        <span class="badge"
+                                              :class="getProviderBadgeClass(db.cloud_provider)"
+                                              x-text="db.cloud_provider"></span>
                                     </td>
                                     <td>
                                         <span class="text-muted" x-text="db.region"></span>
@@ -127,7 +127,15 @@
                                             <div class="small">
                                                 <div>Cache: <span x-text="db.health_metrics.cache_hit_ratio || 'N/A'"></span>%</div>
                                                 <div>Connections: <span x-text="db.health_metrics.active_connections || 'N/A'"></span></div>
+                                                <div x-show="db.health_metrics.pg_stat_statements_available">
+                                                    <span class="badge bg-success">pg_stat_statements</span>
+                                                </div>
                                             </div>
+                                            <button class="btn btn-xs btn-outline-info mt-1"
+                                                    @click="showHealthDetails(db)"
+                                                    x-show="db.health_metrics.pg_stat_statements && db.health_metrics.pg_stat_statements.length > 0">
+                                                View Queries
+                                            </button>
                                         </div>
                                         <div x-show="!db.health_metrics?.success">
                                             <span class="badge bg-secondary">Not checked</span>
@@ -190,6 +198,23 @@
             </div>
         </div>
     </div>
+
+    <!-- Health Details Modal -->
+    <div class="modal fade" id="healthDetailsModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <span x-text="selectedDb?.name"></span> - Health Metrics
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Health details will be loaded via AJAX -->
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -197,6 +222,7 @@ function databaseTestingDashboard() {
     return {
         databases: [],
         summary: null,
+        selectedDb: null,
         loading: {
             all: false,
             health: false,
@@ -206,6 +232,15 @@ function databaseTestingDashboard() {
 
         init() {
             this.refreshSummary();
+
+            // Listen for connection-created events to refresh the dashboard
+            document.body.addEventListener('connection-created', () => {
+                this.refreshSummary();
+            });
+
+            document.body.addEventListener('connection-test-failed', () => {
+                this.refreshSummary();
+            });
         },
 
         async refreshSummary() {
@@ -295,6 +330,9 @@ function databaseTestingDashboard() {
                     if (db) {
                         db.connection_test = result;
                     }
+                    if (result.coords) {
+                        window.dispatchEvent(new CustomEvent('database-tested', { detail: { coords: result.coords } }));
+                    }
                 } else {
                     this.error = result.error || 'Failed to test database';
                 }
@@ -314,6 +352,9 @@ function databaseTestingDashboard() {
                     const db = this.databases.find(d => d.id === dbId);
                     if (db) {
                         db.health_metrics = result;
+                    }
+                    if (result.coords) {
+                        window.dispatchEvent(new CustomEvent('database-tested', { detail: { coords: result.coords } }));
                     }
                 } else {
                     this.error = result.error || 'Failed to get health metrics';
@@ -344,6 +385,9 @@ function databaseTestingDashboard() {
                     if (db) {
                         db.latency_test = result;
                     }
+                    if (result.coords) {
+                        window.dispatchEvent(new CustomEvent('database-tested', { detail: { coords: result.coords } }));
+                    }
                 } else {
                     this.error = result.error || 'Failed to test latency';
                 }
@@ -373,6 +417,9 @@ function databaseTestingDashboard() {
                     if (db) {
                         db.load_test = result;
                     }
+                    if (result.coords) {
+                        window.dispatchEvent(new CustomEvent('database-tested', { detail: { coords: result.coords } }));
+                    }
                 } else {
                     this.error = result.error || 'Failed to run load test';
                 }
@@ -397,6 +444,111 @@ function databaseTestingDashboard() {
             if (latency < 100) return 'bg-success';
             if (latency < 200) return 'bg-warning text-dark';
             return 'bg-danger';
+        },
+
+        async showHealthDetails(db) {
+            this.selectedDb = db;
+            
+            // Load health details via AJAX
+            try {
+                const response = await fetch(`/partials/health_result?connection_id=${db.id}`);
+                const html = await response.text();
+                
+                // Update modal content
+                const modalBody = document.querySelector('#healthDetailsModal .modal-body');
+                if (modalBody) {
+                    modalBody.innerHTML = html;
+                    
+                    // Execute scripts in loaded content
+                    const scripts = modalBody.querySelectorAll('script');
+                    scripts.forEach(script => {
+                        const newScript = document.createElement('script');
+                        newScript.textContent = script.textContent;
+                        document.head.appendChild(newScript);
+                        document.head.removeChild(newScript);
+                    });
+                }
+                
+                const modal = new bootstrap.Modal(document.getElementById('healthDetailsModal'));
+                modal.show();
+            } catch (error) {
+                console.error('Failed to load health details:', error);
+                const modalBody = document.querySelector('#healthDetailsModal .modal-body');
+                if (modalBody) {
+                    modalBody.innerHTML = '<div class="alert alert-danger">Failed to load health details</div>';
+                }
+            }
+        },
+
+        renderHealthMetrics(metrics) {
+            if (!metrics) return '';
+
+            let html = '<div class="health-result">';
+
+            // Summary metrics
+            html += '<div class="row g-2 mb-3">';
+            html += `<div class="col-4"><div class="metric-card">`;
+            html += `<div class="metric-value ${metrics.cache_hit_ratio > 95 ? 'text-success' : metrics.cache_hit_ratio > 80 ? 'text-warning' : 'text-danger'}">${metrics.cache_hit_ratio || 'N/A'}%</div>`;
+            html += `<div class="metric-label">Cache Hit Ratio</div></div></div>`;
+
+            html += `<div class="col-4"><div class="metric-card">`;
+            html += `<div class="metric-value">${metrics.db_size || 'N/A'}</div>`;
+            html += `<div class="metric-label">Database Size</div></div></div>`;
+
+            html += `<div class="col-4"><div class="metric-card">`;
+            html += `<div class="metric-value text-success">${metrics.active_connections || 'N/A'} / ${metrics.total_connections || 'N/A'}</div>`;
+            html += `<div class="metric-label">Active / Total Connections</div></div></div>`;
+            html += '</div>';
+
+            // Query statistics
+            if (metrics.pg_stat_statements_available && metrics.pg_stat_statements && metrics.pg_stat_statements.length > 0) {
+                html += '<div class="mt-4"><h6>Most Expensive Queries</h6>';
+                html += '<div class="table-responsive"><table class="table table-sm table-hover">';
+                html += '<thead><tr>';
+                html += '<th>Query</th><th>Calls</th><th>Mean (ms)</th><th>Max (ms)</th><th>Total (ms)</th><th>Cache %</th>';
+                html += '</tr></thead><tbody>';
+
+                metrics.pg_stat_statements.forEach(query => {
+                    html += '<tr>';
+                    html += `<td><code style="font-size: 0.8rem;">${this.escapeHtml(query.query)}</code></td>`;
+                    html += `<td><span class="badge bg-info">${query.calls}</span></td>`;
+
+                    const meanClass = query.mean_time_ms < 10 ? 'text-success' : query.mean_time_ms < 50 ? 'text-warning' : 'text-danger';
+                    html += `<td><span class="${meanClass}">${query.mean_time_ms}</span></td>`;
+
+                    const maxClass = query.max_time_ms < 50 ? 'text-success' : query.max_time_ms < 200 ? 'text-warning' : 'text-danger';
+                    html += `<td><span class="${maxClass}">${query.max_time_ms}</span></td>`;
+                    html += `<td><span class="text-muted">${query.total_time_ms}</span></td>`;
+
+                    if (query.cache_hit_pct !== null) {
+                        const cacheClass = query.cache_hit_pct > 95 ? 'text-success' : query.cache_hit_pct > 80 ? 'text-warning' : 'text-danger';
+                        html += `<td><span class="${cacheClass}">${query.cache_hit_pct}%</span></td>`;
+                    } else {
+                        html += '<td><span class="text-muted">N/A</span></td>';
+                    }
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table></div></div>';
+            }
+
+            // Warnings
+            if (metrics.warnings && metrics.warnings.length > 0) {
+                html += '<div class="alert alert-warning mt-3"><strong>Warnings:</strong><ul class="mb-0">';
+                metrics.warnings.forEach(warning => {
+                    html += `<li>${this.escapeHtml(warning)}</li>`;
+                });
+                html += '</ul></div>';
+            }
+
+            html += '</div>';
+            return html;
+        },
+
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
     };
 }
