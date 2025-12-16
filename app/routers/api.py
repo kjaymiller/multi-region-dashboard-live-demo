@@ -573,24 +573,25 @@ async def get_latency_chart_data(hours: int = 24):
         return JSONResponse(content={"error": "Database not configured"}, status_code=500)
 
     try:
+        import json
+
         async with get_connection(dsn) as conn:
             # Get latency data from the last X hours
             rows = await conn.fetch(
                 f"""
                 SELECT
-                    lc.region_id,
-                    lc.checked_at,
-                    lc.avg_ms,
-                    lc.min_ms,
-                    lc.max_ms,
+                    ct.connection_id as region_id,
+                    ct.timestamp as checked_at,
+                    ct.latency_ms as avg_ms,
+                    ct.test_data,
                     dc.name as connection_name
-                FROM latency_checks lc
-                LEFT JOIN database_connections dc ON lc.region_id::text = dc.id::text
-                WHERE lc.checked_at >= NOW() - INTERVAL '{hours} hours'
-                    AND lc.success = true
-                    AND lc.region_id IS NOT NULL
-                    AND lc.region_id ~ '^[0-9]+$'
-                ORDER BY lc.checked_at ASC
+                FROM connection_tests ct
+                LEFT JOIN database_connections dc ON ct.connection_id = dc.id
+                WHERE ct.test_type = 'latency'
+                    AND ct.timestamp >= NOW() - INTERVAL '{hours} hours'
+                    AND ct.success = true
+                    AND ct.connection_id IS NOT NULL
+                ORDER BY ct.timestamp ASC
                 """
             )
 
@@ -603,6 +604,7 @@ async def get_latency_chart_data(hours: int = 24):
                 if conn_id not in data_by_connection:
                     data_by_connection[conn_id] = {"label": conn_name, "data": [], "timestamps": []}
 
+                # avg_ms is stored in latency_ms column for latency tests
                 data_by_connection[conn_id]["data"].append(float(row["avg_ms"]))
                 data_by_connection[conn_id]["timestamps"].append(row["checked_at"].isoformat())
 
@@ -627,24 +629,24 @@ async def get_health_metrics_chart_data(hours: int = 24):
         return JSONResponse(content={"error": "Database not configured"}, status_code=500)
 
     try:
+        import json
+
         async with get_connection(dsn) as conn:
             # Get health metrics data from the last X hours
             rows = await conn.fetch(
                 f"""
                 SELECT
-                    hmc.region_id,
-                    hmc.checked_at,
-                    hmc.cache_hit_ratio,
-                    hmc.active_connections,
-                    hmc.total_connections,
+                    ct.connection_id as region_id,
+                    ct.timestamp as checked_at,
+                    ct.test_data,
                     dc.name as connection_name
-                FROM health_metrics_checks hmc
-                LEFT JOIN database_connections dc ON hmc.region_id::text = dc.id::text
-                WHERE hmc.checked_at >= NOW() - INTERVAL '{hours} hours'
-                    AND hmc.success = true
-                    AND hmc.region_id IS NOT NULL
-                    AND hmc.region_id ~ '^[0-9]+$'
-                ORDER BY hmc.checked_at ASC
+                FROM connection_tests ct
+                LEFT JOIN database_connections dc ON ct.connection_id = dc.id
+                WHERE ct.test_type = 'health'
+                    AND ct.timestamp >= NOW() - INTERVAL '{hours} hours'
+                    AND ct.success = true
+                    AND ct.connection_id IS NOT NULL
+                ORDER BY ct.timestamp ASC
                 """
             )
 
@@ -657,6 +659,9 @@ async def get_health_metrics_chart_data(hours: int = 24):
                 conn_name = row["connection_name"] or f"Database {conn_id}"
                 timestamp = row["checked_at"].isoformat()
 
+                # Parse test_data JSON
+                test_data = json.loads(row["test_data"]) if row["test_data"] else {}
+
                 # Cache hit ratio data
                 if conn_id not in cache_hit_data:
                     cache_hit_data[conn_id] = {
@@ -665,8 +670,9 @@ async def get_health_metrics_chart_data(hours: int = 24):
                         "timestamps": [],
                     }
 
-                if row["cache_hit_ratio"] is not None:
-                    cache_hit_data[conn_id]["data"].append(float(row["cache_hit_ratio"]))
+                cache_hit_ratio = test_data.get("cache_hit_ratio")
+                if cache_hit_ratio is not None:
+                    cache_hit_data[conn_id]["data"].append(float(cache_hit_ratio))
                     cache_hit_data[conn_id]["timestamps"].append(timestamp)
 
                 # Active connections data
@@ -677,8 +683,9 @@ async def get_health_metrics_chart_data(hours: int = 24):
                         "timestamps": [],
                     }
 
-                if row["active_connections"] is not None:
-                    connections_data[conn_id]["data"].append(int(row["active_connections"]))
+                active_connections = test_data.get("active_connections")
+                if active_connections is not None:
+                    connections_data[conn_id]["data"].append(int(active_connections))
                     connections_data[conn_id]["timestamps"].append(timestamp)
 
             return JSONResponse(
@@ -703,22 +710,24 @@ async def get_performance_summary_chart_data():
         return JSONResponse(content={"error": "Database not configured"}, status_code=500)
 
     try:
+        import json
+
         async with get_connection(dsn) as conn:
             # Get average latency per database from the last 24 hours
             latency_rows = await conn.fetch(
                 """
                 SELECT
-                    lc.region_id,
+                    ct.connection_id as region_id,
                     dc.name as connection_name,
-                    ROUND(AVG(lc.avg_ms)::numeric, 2) as avg_latency,
+                    ROUND(AVG(ct.latency_ms)::numeric, 2) as avg_latency,
                     COUNT(*) as check_count
-                FROM latency_checks lc
-                LEFT JOIN database_connections dc ON lc.region_id::text = dc.id::text
-                WHERE lc.checked_at >= NOW() - INTERVAL '24 hours'
-                    AND lc.success = true
-                    AND lc.region_id IS NOT NULL
-                    AND lc.region_id ~ '^[0-9]+$'
-                GROUP BY lc.region_id, dc.name
+                FROM connection_tests ct
+                LEFT JOIN database_connections dc ON ct.connection_id = dc.id
+                WHERE ct.test_type = 'latency'
+                    AND ct.timestamp >= NOW() - INTERVAL '24 hours'
+                    AND ct.success = true
+                    AND ct.connection_id IS NOT NULL
+                GROUP BY ct.connection_id, dc.name
                 ORDER BY avg_latency ASC
                 """
             )
@@ -727,39 +736,68 @@ async def get_performance_summary_chart_data():
             success_rows = await conn.fetch(
                 """
                 SELECT
-                    cc.region_id,
+                    ct.connection_id as region_id,
                     dc.name as connection_name,
-                    COUNT(*) FILTER (WHERE cc.success = true) as success_count,
+                    COUNT(*) FILTER (WHERE ct.success = true) as success_count,
                     COUNT(*) as total_count,
-                    ROUND((COUNT(*) FILTER (WHERE cc.success = true)::numeric / COUNT(*)::numeric * 100), 2) as success_rate
-                FROM connection_checks cc
-                LEFT JOIN database_connections dc ON cc.region_id::text = dc.id::text
-                WHERE cc.checked_at >= NOW() - INTERVAL '24 hours'
-                    AND cc.region_id IS NOT NULL
-                    AND cc.region_id ~ '^[0-9]+$'
-                GROUP BY cc.region_id, dc.name
+                    ROUND((COUNT(*) FILTER (WHERE ct.success = true)::numeric / COUNT(*)::numeric * 100), 2) as success_rate
+                FROM connection_tests ct
+                LEFT JOIN database_connections dc ON ct.connection_id = dc.id
+                WHERE ct.test_type = 'connection'
+                    AND ct.timestamp >= NOW() - INTERVAL '24 hours'
+                    AND ct.connection_id IS NOT NULL
+                GROUP BY ct.connection_id, dc.name
                 ORDER BY success_rate DESC
                 """
             )
 
             # Get cache hit ratio per database from the last 24 hours
-            cache_rows = await conn.fetch(
+            # Need to parse test_data JSONB to get cache_hit_ratio
+            cache_rows_raw = await conn.fetch(
                 """
                 SELECT
-                    hmc.region_id,
+                    ct.connection_id as region_id,
                     dc.name as connection_name,
-                    ROUND(AVG(hmc.cache_hit_ratio)::numeric, 2) as avg_cache_hit
-                FROM health_metrics_checks hmc
-                LEFT JOIN database_connections dc ON hmc.region_id::text = dc.id::text
-                WHERE hmc.checked_at >= NOW() - INTERVAL '24 hours'
-                    AND hmc.success = true
-                    AND hmc.cache_hit_ratio IS NOT NULL
-                    AND hmc.region_id IS NOT NULL
-                    AND hmc.region_id ~ '^[0-9]+$'
-                GROUP BY hmc.region_id, dc.name
-                ORDER BY avg_cache_hit DESC
+                    ct.test_data
+                FROM connection_tests ct
+                LEFT JOIN database_connections dc ON ct.connection_id = dc.id
+                WHERE ct.test_type = 'health'
+                    AND ct.timestamp >= NOW() - INTERVAL '24 hours'
+                    AND ct.success = true
+                    AND ct.test_data IS NOT NULL
+                    AND ct.connection_id IS NOT NULL
+                ORDER BY ct.timestamp DESC
                 """
             )
+
+            # Process cache hit ratio data from JSON
+            cache_by_connection = {}
+            for row in cache_rows_raw:
+                test_data = json.loads(row["test_data"]) if row["test_data"] else {}
+                cache_hit_ratio = test_data.get("cache_hit_ratio")
+
+                if cache_hit_ratio is not None:
+                    conn_id = row["region_id"]
+                    if conn_id not in cache_by_connection:
+                        cache_by_connection[conn_id] = {
+                            "name": row["connection_name"],
+                            "values": []
+                        }
+                    cache_by_connection[conn_id]["values"].append(float(cache_hit_ratio))
+
+            # Calculate averages
+            cache_rows = []
+            for conn_id, data in cache_by_connection.items():
+                if data["values"]:
+                    avg_cache_hit = round(sum(data["values"]) / len(data["values"]), 2)
+                    cache_rows.append({
+                        "region_id": conn_id,
+                        "connection_name": data["name"],
+                        "avg_cache_hit": avg_cache_hit
+                    })
+
+            # Sort by avg_cache_hit descending
+            cache_rows.sort(key=lambda x: x["avg_cache_hit"], reverse=True)
 
             # Format data for charts
             latency_data = {

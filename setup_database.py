@@ -120,6 +120,7 @@ async def setup_database():
                 pg_version TEXT,
                 backend_pid INTEGER,
                 error_message TEXT,
+                test_data JSONB,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 CONSTRAINT fk_connection
                     FOREIGN KEY (connection_id)
@@ -128,6 +129,16 @@ async def setup_database():
             )
         """)
         print("✓ connection_tests table created")
+
+        # Add test_data column if it doesn't exist (for existing tables)
+        try:
+            await conn.execute("""
+                ALTER TABLE connection_tests
+                ADD COLUMN IF NOT EXISTS test_data JSONB
+            """)
+            print("✓ test_data column ensured in connection_tests")
+        except Exception as e:
+            print(f"⚠ Note: Could not add test_data column: {e}")
 
         # Convert to TimescaleDB hypertable if not already converted
         try:

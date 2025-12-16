@@ -754,25 +754,30 @@ async def save_connection_check(result: dict, user_key: str | None = None) -> No
         return
 
     try:
+        import json
+
         async with get_connection(dsn) as conn:
+            # Store additional data in test_data JSONB column
+            test_data = {"user_key": user_key} if user_key else {}
+
             await conn.execute(
                 """
-                INSERT INTO connection_checks (
-                    region_id, success, latency_ms, server_ip, backend_pid,
-                    pg_version, error_message, user_key
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                INSERT INTO connection_tests (
+                    connection_id, test_type, success, latency_ms, server_ip,
+                    backend_pid, pg_version, error_message, test_data
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 """,
                 result.get("connection_id"),
+                "connection",
                 result.get("success", False),
                 result.get("latency_ms"),
                 result.get("server_ip"),
                 result.get("backend_pid"),
                 result.get("pg_version"),
                 result.get("error"),
-                user_key,
+                json.dumps(test_data),
             )
     except Exception as e:
-        # Log error but don't fail request (table might not exist yet)
         import logging
 
         logging.warning(f"Failed to save connection check: {e}")
@@ -785,28 +790,32 @@ async def save_latency_check(result: dict, user_key: str | None = None) -> None:
         return
 
     try:
-        async with get_connection(dsn) as conn:
-            # Convert timings list to JSON
-            import json
+        import json
 
-            timings_json = json.dumps(result.get("timings", []))
+        async with get_connection(dsn) as conn:
+            # Store latency-specific data in test_data JSONB column
+            test_data = {
+                "iterations": result.get("iterations"),
+                "min_ms": result.get("min_ms"),
+                "max_ms": result.get("max_ms"),
+                "timings": result.get("timings", []),
+            }
+            if user_key:
+                test_data["user_key"] = user_key
 
             await conn.execute(
                 """
-                INSERT INTO latency_checks (
-                    region_id, success, iterations, min_ms, max_ms, avg_ms,
-                    timings, error_message, user_key
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                INSERT INTO connection_tests (
+                    connection_id, test_type, success, latency_ms,
+                    error_message, test_data
+                ) VALUES ($1, $2, $3, $4, $5, $6)
                 """,
                 result.get("connection_id"),
+                "latency",
                 result.get("success", False),
-                result.get("iterations"),
-                result.get("min_ms"),
-                result.get("max_ms"),
-                result.get("avg_ms"),
-                timings_json,
+                result.get("avg_ms"),  # Use avg_ms as the main latency value
                 result.get("error"),
-                user_key,
+                json.dumps(test_data),
             )
     except Exception as e:
         import logging
@@ -821,24 +830,33 @@ async def save_load_test_check(result: dict, user_key: str | None = None) -> Non
         return
 
     try:
+        import json
+
         async with get_connection(dsn) as conn:
+            # Store load test-specific data in test_data JSONB column
+            test_data = {
+                "concurrent_connections": result.get("concurrent"),
+                "min_ms": result.get("min_ms"),
+                "max_ms": result.get("max_ms"),
+                "total_time_ms": result.get("total_time_ms"),
+                "queries_per_second": result.get("queries_per_second"),
+            }
+            if user_key:
+                test_data["user_key"] = user_key
+
             await conn.execute(
                 """
-                INSERT INTO load_test_checks (
-                    region_id, success, concurrent_connections, min_ms, max_ms,
-                    avg_ms, total_time_ms, queries_per_second, error_message, user_key
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                INSERT INTO connection_tests (
+                    connection_id, test_type, success, latency_ms,
+                    error_message, test_data
+                ) VALUES ($1, $2, $3, $4, $5, $6)
                 """,
                 result.get("connection_id"),
+                "load",
                 result.get("success", False),
-                result.get("concurrent"),
-                result.get("min_ms"),
-                result.get("max_ms"),
-                result.get("avg_ms"),
-                result.get("total_time_ms"),
-                result.get("queries_per_second"),
+                result.get("avg_ms"),  # Use avg_ms as the main latency value
                 result.get("error"),
-                user_key,
+                json.dumps(test_data),
             )
     except Exception as e:
         import logging
@@ -853,34 +871,33 @@ async def save_health_metrics_check(result: dict, user_key: str | None = None) -
         return
 
     try:
+        import json
+
         async with get_connection(dsn) as conn:
-            # Convert warnings list to JSON
-            import json
-
-            warnings_json = json.dumps(result.get("warnings", []))
-
-            # Use connection_id as region_id for proper tracking, fallback to "database"
-            region_id = result.get("connection_id", "database")
+            # Store health metrics-specific data in test_data JSONB column
+            test_data = {
+                "cache_hit_ratio": result.get("cache_hit_ratio"),
+                "active_connections": result.get("active_connections"),
+                "idle_connections": result.get("idle_connections"),
+                "total_connections": result.get("total_connections"),
+                "db_size": result.get("db_size"),
+                "pg_stat_statements_available": result.get("pg_stat_statements_available", False),
+                "warnings": result.get("warnings", []),
+            }
+            if user_key:
+                test_data["user_key"] = user_key
 
             await conn.execute(
                 """
-                INSERT INTO health_metrics_checks (
-                    region_id, success, cache_hit_ratio, active_connections,
-                    idle_connections, total_connections, db_size,
-                    pg_stat_statements_available, warnings, error_message, user_key
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                INSERT INTO connection_tests (
+                    connection_id, test_type, success, error_message, test_data
+                ) VALUES ($1, $2, $3, $4, $5)
                 """,
-                region_id,
+                result.get("connection_id", "unknown"),
+                "health",
                 result.get("success", False),
-                result.get("cache_hit_ratio"),
-                result.get("active_connections"),
-                result.get("idle_connections"),
-                result.get("total_connections"),
-                result.get("db_size"),
-                result.get("pg_stat_statements_available", False),
-                warnings_json,
                 result.get("error"),
-                user_key,
+                json.dumps(test_data),
             )
     except Exception as e:
         import logging
@@ -899,10 +916,11 @@ async def get_recent_connection_checks(limit: int = 10) -> list[dict]:
             rows = await conn.fetch(
                 """
                 SELECT
-                    id, region_id, checked_at, success, latency_ms,
-                    server_ip, backend_pid, error_message
-                FROM connection_checks
-                ORDER BY checked_at DESC
+                    id, connection_id as region_id, timestamp as checked_at,
+                    success, latency_ms, server_ip, backend_pid, error_message
+                FROM connection_tests
+                WHERE test_type = 'connection'
+                ORDER BY timestamp DESC
                 LIMIT $1
                 """,
                 limit,
@@ -941,79 +959,62 @@ async def get_all_recent_checks(limit: int = 20) -> list[dict]:
         return []
 
     try:
+        import json
+
         async with get_connection(dsn) as conn:
-            # Get all types of checks across all regions
+            # Get all types of checks from connection_tests table
             rows = await conn.fetch(
                 """
                 SELECT
-                    'connection' as check_type,
-                    region_id,
-                    checked_at,
+                    test_type as check_type,
+                    connection_id as region_id,
+                    timestamp as checked_at,
                     success,
-                    latency_ms as metric_value,
-                    'ms' as metric_unit,
+                    latency_ms,
                     error_message,
-                    user_key
-                FROM connection_checks
-
-                UNION ALL
-
-                SELECT
-                    'latency' as check_type,
-                    region_id,
-                    checked_at,
-                    success,
-                    avg_ms as metric_value,
-                    'ms' as metric_unit,
-                    error_message,
-                    user_key
-                FROM latency_checks
-
-                UNION ALL
-
-                SELECT
-                    'load_test' as check_type,
-                    region_id,
-                    checked_at,
-                    success,
-                    queries_per_second as metric_value,
-                    'qps' as metric_unit,
-                    error_message,
-                    user_key
-                FROM load_test_checks
-
-                UNION ALL
-
-                SELECT
-                    'health' as check_type,
-                    region_id,
-                    checked_at,
-                    success,
-                    cache_hit_ratio as metric_value,
-                    '%' as metric_unit,
-                    error_message,
-                    user_key
-                FROM health_metrics_checks
-
-                ORDER BY checked_at DESC
+                    test_data
+                FROM connection_tests
+                ORDER BY timestamp DESC
                 LIMIT $1
                 """,
                 limit,
             )
 
-            return [
-                {
+            # Process rows to extract metric_value and metric_unit based on test type
+            results = []
+            for row in rows:
+                test_data = json.loads(row["test_data"]) if row["test_data"] else {}
+
+                # Determine metric value and unit based on test type
+                if row["check_type"] == "connection":
+                    metric_value = row["latency_ms"]
+                    metric_unit = "ms"
+                elif row["check_type"] == "latency":
+                    metric_value = row["latency_ms"]  # avg_ms is stored in latency_ms
+                    metric_unit = "ms"
+                elif row["check_type"] == "load":
+                    metric_value = test_data.get("queries_per_second")
+                    metric_unit = "qps"
+                elif row["check_type"] == "health":
+                    metric_value = test_data.get("cache_hit_ratio")
+                    metric_unit = "%"
+                else:
+                    metric_value = None
+                    metric_unit = ""
+
+                results.append({
                     "check_type": row["check_type"],
                     "region_id": row["region_id"],
                     "checked_at": row["checked_at"],
                     "success": row["success"],
-                    "metric_value": row["metric_value"],
-                    "metric_unit": row["metric_unit"],
+                    "metric_value": metric_value,
+                    "metric_unit": metric_unit,
                     "error_message": row["error_message"],
-                    "user_key": row["user_key"],
-                }
-                for row in rows
-            ]
-    except Exception:
-        # Table might not exist yet
+                    "user_key": test_data.get("user_key"),
+                })
+
+            return results
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to get recent checks: {e}")
         return []
