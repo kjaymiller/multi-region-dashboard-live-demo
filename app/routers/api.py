@@ -382,7 +382,7 @@ async def health_check_all_databases():
 async def get_database_summary():
     """Get a summary of all database connections and their status."""
     connections = db_manager.get_all_connections()
-    
+
     summary = {
         "total_databases": len(connections),
         "by_provider": {},
