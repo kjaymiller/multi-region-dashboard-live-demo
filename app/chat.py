@@ -7,6 +7,7 @@ import httpx
 
 from .config import get_chat_config
 from .database import get_connection, get_dsn
+from .db_manager_postgres import DatabaseConnection
 
 
 async def get_expensive_queries() -> list[dict]:
@@ -115,34 +116,33 @@ def format_expensive_queries(queries: list[dict]) -> str:
 
 
 def get_system_prompt(
-    recent_checks: list[dict] | None = None, expensive_queries: list[dict] | None = None
+    recent_checks: list[dict] | None = None,
+    expensive_queries: list[dict] | None = None,
+    connections: list[DatabaseConnection] | None = None,
 ) -> str:
     """Generate system prompt with database context."""
     prompt = """🎯 You are an expert PostgreSQL database performance analyst helping users optimize their multi-region database infrastructure.
 
-📊 You have access to comprehensive performance data including:
-- Connection tests across multiple regions (US East, EU West, Asia Pacific)
-- Latency measurements and performance metrics
-- Load testing results and scalability insights
-- Database health metrics (cache hit ratios, connection counts, etc.)
-- Query performance analysis and expensive query identification
+🚨 CRITICAL INSTRUCTIONS - READ CAREFULLY:
+- ONLY use the exact data provided below in the "Recent Performance Checks" and "Expensive Queries" sections
+- DO NOT invent, hallucinate, or make up any database names, metrics, or performance data
+- DO NOT mention databases that are not listed in the provided data
+- If no specific databases are mentioned in the data, say "I don't see specific database connections in the provided data"
+- When you see database connection IDs (like "4" or "5"), refer to them as "Connection ID 4" or "Connection ID 5" - DO NOT invent names like "Database 3" or "US East"
 
-🎯 Your expertise includes:
-- Query optimization and indexing strategies
-- Connection pooling and performance tuning
-- Multi-region latency analysis
-- Database scaling and replication strategies
-- PostgreSQL internals and best practices
+📊 You have access ONLY to the following data:
+- Recent Performance Checks (exact data provided below)
+- Expensive Queries (exact data provided below, if any)
 
 💡 When answering questions:
-1. Be concise and actionable with specific recommendations
-2. Focus on performance insights with measurable improvements
-3. Explain complex database concepts in simple, practical terms
-4. Reference specific metrics and provide optimization steps
-5. Prioritize suggestions by impact and implementation effort
-6. Consider security and operational implications
+1. Use ONLY the metrics and data shown below
+2. Be concise and actionable with specific recommendations
+3. If multiple connections exist, reference them by their actual IDs from the data
+4. If data shows failed checks, address those specifically
+5. If expensive queries exist, analyze the exact metrics shown
+6. If no data is available, say "No recent performance data available"
 
-"""
+ """
 
     if expensive_queries:
         prompt += format_expensive_queries(expensive_queries)
@@ -163,7 +163,22 @@ def get_system_prompt(
             elif not success:
                 prompt += f"   ❌ {region}: {check_type} - FAILED\n"
 
+    # Add database connection context if available
+    if connections:
+        prompt += "\n🏢 Database Connections Being Analyzed:\n"
+        for conn in connections[:5]:  # Show up to 5 connections
+            conn_info = f"   📊 {conn.name}"
+            if conn.region:
+                conn_info += f" (🌍 {conn.region})"
+            if conn.cloud_provider:
+                conn_info += f" - {conn.cloud_provider}"
+            if conn.host:
+                conn_info += f" - {conn.host}:{conn.port}"
+            prompt += conn_info + "\n"
+        prompt += "\n"
+
     prompt += "\n🔧 Provide specific, actionable recommendations based on the data above."
+    prompt += " When referencing databases, specify which connection/region you're talking about."
 
     return prompt
 
@@ -215,7 +230,11 @@ async def chat_with_ollama(
 
 
 async def get_chat_response(
-    message: str, recent_checks: list[dict] | None = None, model: str | None = None
+    message: str,
+    recent_checks: list[dict] | None = None,
+    expensive_queries: list[dict] | None = None,
+    connections: list[object] | None = None,
+    model: str | None = None,
 ) -> str:
     """Get a complete chat response from Ollama (non-streaming)."""
 
@@ -225,10 +244,9 @@ async def get_chat_response(
 
     model = model or config.model
 
-    # Get expensive queries data
-    expensive_queries = await get_expensive_queries()
-
-    system_prompt = get_system_prompt(recent_checks or [], expensive_queries)
+    system_prompt = get_system_prompt(
+        recent_checks or [], expensive_queries or [], connections or []
+    )
 
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
 

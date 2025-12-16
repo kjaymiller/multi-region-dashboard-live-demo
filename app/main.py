@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.routers import api, db_management, pages
+from app.routers import api, db_management_postgres, pages
 
 
 @asynccontextmanager
@@ -30,7 +30,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # Include routers
 app.include_router(pages.router)
 app.include_router(api.router, prefix="/api")
-app.include_router(db_management.router, prefix="/api/db")
+app.include_router(db_management_postgres.router, prefix="/api/db")
 
 # Create templates instance for use in routers
 templates = Jinja2Templates(directory="app/templates")
