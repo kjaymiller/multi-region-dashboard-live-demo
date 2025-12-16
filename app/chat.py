@@ -5,11 +5,10 @@ from collections.abc import AsyncGenerator
 
 import httpx
 
-OLLAMA_BASE_URL = "http://localhost:11434"
-DEFAULT_MODEL = "llama3.2:latest"
+from .config import get_chat_config
 
 
-def get_system_prompt(recent_checks: list[dict] = None) -> str:
+def get_system_prompt(recent_checks: list[dict] | None = None) -> str:
     """Generate system prompt with database context."""
     prompt = """You are an AI assistant helping users understand their multi-region PostgreSQL database performance.
 
@@ -47,9 +46,16 @@ When answering questions:
 
 
 async def chat_with_ollama(
-    message: str, model: str = DEFAULT_MODEL, context: str = None
+    message: str, model: str | None = None, context: str | None = None
 ) -> AsyncGenerator[str, None]:
     """Stream chat responses from Ollama."""
+    
+    config = get_chat_config()
+    if not config.enabled:
+        yield "Chat functionality is disabled. Set CHAT_ENABLED=true to enable."
+        return
+    
+    model = model or config.model
 
     messages = []
 
@@ -60,41 +66,56 @@ async def chat_with_ollama(
     # Add user message
     messages.append({"role": "user", "content": message})
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        async with client.stream(
-            "POST",
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={"model": model, "messages": messages, "stream": True},
-        ) as response:
-            async for line in response.aiter_lines():
-                if line.strip():
-                    try:
-                        data = json.loads(line)
-                        if "message" in data and "content" in data["message"]:
-                            content = data["message"]["content"]
-                            if content:
-                                yield content
-                    except json.JSONDecodeError:
-                        continue
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream(
+                "POST",
+                f"{config.base_url}/api/chat",
+                json={"model": model, "messages": messages, "stream": True},
+            ) as response:
+                if response.status_code != 200:
+                    yield f"Error: Ollama service returned status {response.status_code}"
+                    return
+                    
+                async for line in response.aiter_lines():
+                    if line.strip():
+                        try:
+                            data = json.loads(line)
+                            if "message" in data and "content" in data["message"]:
+                                content = data["message"]["content"]
+                                if content:
+                                    yield content
+                        except json.JSONDecodeError:
+                            continue
+    except httpx.ConnectError:
+        yield "Error: Cannot connect to Ollama service. Make sure Ollama is running and accessible."
 
 
 async def get_chat_response(
-    message: str, recent_checks: list[dict] = None, model: str = DEFAULT_MODEL
+    message: str, recent_checks: list[dict] | None = None, model: str | None = None
 ) -> str:
     """Get a complete chat response from Ollama (non-streaming)."""
-
-    system_prompt = get_system_prompt(recent_checks)
+    
+    config = get_chat_config()
+    if not config.enabled:
+        return "Chat functionality is disabled. Set CHAT_ENABLED=true to enable."
+    
+    model = model or config.model
+    system_prompt = get_system_prompt(recent_checks or [])
 
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={"model": model, "messages": messages, "stream": False},
-        )
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{config.base_url}/api/chat",
+                json={"model": model, "messages": messages, "stream": False},
+            )
 
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("message", {}).get("content", "Sorry, I couldn't generate a response.")
-        else:
-            return f"Error: Unable to connect to Ollama (status {response.status_code})"
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("message", {}).get("content", "Sorry, I couldn't generate a response.")
+            else:
+                return f"Error: Unable to connect to Ollama (status {response.status_code})"
+    except httpx.ConnectError:
+        return "Error: Cannot connect to Ollama service. Make sure Ollama is running and accessible."

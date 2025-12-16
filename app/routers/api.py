@@ -14,10 +14,13 @@ from app.database import (
     measure_connection_latency,
     measure_latency,
     run_connection_load_test,
+    save_connection_check,
     save_health_metrics_check,
+    save_latency_check,
+    save_load_test_check,
     test_connection,
 )
-from app.db_manager import db_manager
+from app.db_manager_postgres import db_manager
 from app.region_mapping import estimate_latency_distance, get_cloud_color, get_region_coordinates
 
 router = APIRouter()
@@ -126,7 +129,7 @@ async def chat(request: Request):
 @router.get("/map-data")
 async def get_map_data():
     """Get map data for all database connections with geolocation and performance metrics."""
-    connections = db_manager.get_all_connections()
+    connections = await db_manager.get_all_connections()
     map_data = []
 
     for conn in connections:
@@ -137,12 +140,12 @@ async def get_map_data():
             try:
                 # For now, use default metrics - in a real implementation,
                 # you'd query the database for this specific connection
-                latency_result = await test_connection()
-                health_result = await get_health_metrics()
+                latency_result = await db_manager.test_connection(conn)
+                health_result = await get_connection_health_metrics(conn)
 
                 map_data.append(
                     {
-                        "id": conn.id,
+                        "id": str(conn.id),
                         "name": conn.name,
                         "host": conn.host,
                         "port": conn.port,
@@ -162,7 +165,7 @@ async def get_map_data():
                 # Add connection without metrics if there's an error
                 map_data.append(
                     {
-                        "id": conn.id,
+                        "id": str(conn.id),
                         "name": conn.name,
                         "host": conn.host,
                         "port": conn.port,
@@ -204,29 +207,37 @@ async def get_map_data():
 
 
 @router.post("/test-database/{connection_id}")
-async def test_database_connection(connection_id: str):
+async def test_database_connection(request: Request, connection_id: int):
     """Test a specific database connection."""
-    connection = db_manager.get_connection(connection_id)
+    connection = await db_manager.get_connection(connection_id)
     if not connection:
         return JSONResponse(
             content={"success": False, "error": "Database connection not found"}, status_code=404
         )
+
+    coords = get_region_coordinates(connection.region) if connection.region else None
 
     try:
         result = await db_manager.test_connection(connection)
+        if result.get("success"):
+            await save_connection_check(result, user_key=get_user_key(request))
+        if coords:
+            result["coords"] = coords
         return JSONResponse(content=result)
     except Exception as e:
-        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+        return JSONResponse(content={"success": False, "error": str(e), "coords": coords}, status_code=500)
 
 
 @router.post("/health-check/{connection_id}")
-async def get_database_health(connection_id: str):
+async def get_database_health(request: Request, connection_id: int):
     """Get health metrics for a specific database connection."""
-    connection = db_manager.get_connection(connection_id)
+    connection = await db_manager.get_connection(connection_id)
     if not connection:
         return JSONResponse(
             content={"success": False, "error": "Database connection not found"}, status_code=404
         )
+
+    coords = get_region_coordinates(connection.region) if connection.region else None
 
     try:
         # Get health metrics for the specific database connection
@@ -235,9 +246,12 @@ async def get_database_health(connection_id: str):
         # Save health metrics to database for historical tracking
         if result.get("success"):
             try:
-                await save_health_metrics_check(result, connection_id)
+                await save_health_metrics_check(result, user_key=get_user_key(request))
             except Exception as save_error:
                 result["warnings"].append(f"Failed to save health metrics: {str(save_error)}")
+
+        if coords:
+            result["coords"] = coords
 
         # Return appropriate HTTP status based on health check result
         if result.get("success"):
@@ -247,19 +261,21 @@ async def get_database_health(connection_id: str):
 
     except Exception as e:
         return JSONResponse(
-            content={"success": False, "error": f"Health check failed: {str(e)}", "connection_id": connection_id},
+            content={"success": False, "error": f"Health check failed: {str(e)}", "connection_id": connection_id, "coords": coords},
             status_code=500
         )
 
 
 @router.post("/latency-test/{connection_id}")
-async def test_database_latency(connection_id: str, iterations: int = 5):
+async def test_database_latency(request: Request, connection_id: int, iterations: int = 5):
     """Test latency to a specific database connection."""
-    connection = db_manager.get_connection(connection_id)
+    connection = await db_manager.get_connection(connection_id)
     if not connection:
         return JSONResponse(
             content={"success": False, "error": "Database connection not found"}, status_code=404
         )
+
+    coords = get_region_coordinates(connection.region) if connection.region else None
 
     if iterations < 1 or iterations > 100:
         return JSONResponse(
@@ -269,19 +285,25 @@ async def test_database_latency(connection_id: str, iterations: int = 5):
 
     try:
         result = await measure_connection_latency(connection, iterations)
+        if result.get("success"):
+            await save_latency_check(result, user_key=get_user_key(request))
+        if coords:
+            result["coords"] = coords
         return JSONResponse(content=result)
     except Exception as e:
-        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+        return JSONResponse(content={"success": False, "error": str(e), "coords": coords}, status_code=500)
 
 
 @router.post("/load-test/{connection_id}")
-async def run_database_load_test_endpoint(connection_id: str, concurrent: int = 10):
+async def run_database_load_test_endpoint(request: Request, connection_id: int, concurrent: int = 10):
     """Run a load test against a specific database connection."""
-    connection = db_manager.get_connection(connection_id)
+    connection = await db_manager.get_connection(connection_id)
     if not connection:
         return JSONResponse(
             content={"success": False, "error": "Database connection not found"}, status_code=404
         )
+
+    coords = get_region_coordinates(connection.region) if connection.region else None
 
     if concurrent < 1 or concurrent > 100:
         return JSONResponse(
@@ -291,15 +313,19 @@ async def run_database_load_test_endpoint(connection_id: str, concurrent: int = 
 
     try:
         result = await run_connection_load_test(connection, concurrent)
+        if result.get("success"):
+            await save_load_test_check(result, user_key=get_user_key(request))
+        if coords:
+            result["coords"] = coords
         return JSONResponse(content=result)
     except Exception as e:
-        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+        return JSONResponse(content={"success": False, "error": str(e), "coords": coords}, status_code=500)
 
 
 @router.get("/test-all-databases")
 async def test_all_databases():
     """Test all configured database connections."""
-    connections = db_manager.get_all_connections()
+    connections = await db_manager.get_all_connections()
     results = []
 
     for conn in connections:
@@ -307,7 +333,7 @@ async def test_all_databases():
             result = await db_manager.test_connection(conn)
             results.append(
                 {
-                    "id": conn.id,
+                    "id": str(conn.id),
                     "name": conn.name,
                     "host": conn.host,
                     "port": conn.port,
@@ -319,7 +345,7 @@ async def test_all_databases():
         except Exception as e:
             results.append(
                 {
-                    "id": conn.id,
+                    "id": str(conn.id),
                     "name": conn.name,
                     "host": conn.host,
                     "port": conn.port,
@@ -340,10 +366,11 @@ async def test_all_databases():
 
 
 @router.get("/health-all-databases")
-async def health_check_all_databases():
+async def health_check_all_databases(request: Request):
     """Get health metrics for all configured database connections."""
-    connections = db_manager.get_all_connections()
+    connections = await db_manager.get_all_connections()
     results = []
+    user_key = get_user_key(request)
 
     # Create tasks for parallel health checks
     health_check_tasks = []
@@ -352,7 +379,7 @@ async def health_check_all_databases():
             {
                 "connection": conn,
                 "health_task": get_connection_health_metrics(conn),
-                "connection_test_task": db_manager.test_connection(conn),
+                "connection_test_task": measure_connection_latency(conn),
             }
         )
 
@@ -380,7 +407,7 @@ async def health_check_all_databases():
             # Save health metrics to database for historical tracking
             if health_result.get("success"):
                 try:
-                    await save_health_metrics_check(health_result, conn.id)
+                    await save_health_metrics_check(health_result, user_key=user_key)
                 except Exception as save_error:
                     if "warnings" not in health_result:
                         health_result["warnings"] = []
@@ -388,7 +415,7 @@ async def health_check_all_databases():
 
             results.append(
                 {
-                    "id": conn.id,
+                    "id": str(conn.id),
                     "name": conn.name,
                     "host": conn.host,
                     "port": conn.port,
@@ -407,7 +434,7 @@ async def health_check_all_databases():
             # Fallback for any unexpected errors
             results.append(
                 {
-                    "id": conn.id,
+                    "id": str(conn.id),
                     "name": conn.name,
                     "host": conn.host,
                     "port": conn.port,
@@ -433,7 +460,7 @@ async def health_check_all_databases():
 @router.get("/database-summary")
 async def get_database_summary():
     """Get a summary of all database connections and their status."""
-    connections = db_manager.get_all_connections()
+    connections = await db_manager.get_all_connections()
 
     summary = {
         "total_databases": len(connections),
@@ -459,7 +486,7 @@ async def get_database_summary():
         # Add connection summary
         summary["connections"].append(
             {
-                "id": conn.id,
+                "id": str(conn.id),
                 "name": conn.name,
                 "provider": provider,
                 "region": region,
@@ -469,3 +496,240 @@ async def get_database_summary():
         )
 
     return JSONResponse(content=summary)
+
+
+@router.get("/recent-checks")
+async def get_recent_checks_endpoint(request: Request, limit: int = 20):
+    """Get a list of recent checks and their results."""
+    recent_checks = await get_all_recent_checks(limit=limit)
+    return templates.TemplateResponse(
+        "partials/recent_checks_table_body.html",
+        {"request": request, "checks": recent_checks},
+    )
+
+
+@router.get("/charts/latency")
+async def get_latency_chart_data(hours: int = 24):
+    """Get latency time series data for all database connections."""
+    from app.config import get_dsn
+    from app.database import get_connection
+
+    dsn = get_dsn()
+    if not dsn:
+        return JSONResponse(content={"error": "Database not configured"}, status_code=500)
+
+    try:
+        async with get_connection(dsn) as conn:
+            # Get latency data from the last X hours
+            rows = await conn.fetch(
+                """
+                SELECT
+                    lc.region_id,
+                    lc.checked_at,
+                    lc.avg_ms,
+                    lc.min_ms,
+                    lc.max_ms,
+                    dc.name as connection_name
+                FROM latency_checks lc
+                LEFT JOIN database_connections dc ON lc.region_id::text = dc.id::text
+                WHERE lc.checked_at >= NOW() - INTERVAL '%s hours'
+                    AND lc.success = true
+                    AND lc.region_id IS NOT NULL
+                    AND lc.region_id ~ '^[0-9]+$'
+                ORDER BY lc.checked_at ASC
+                """ % hours
+            )
+
+            # Group data by connection
+            data_by_connection = {}
+            for row in rows:
+                conn_id = row["region_id"]
+                conn_name = row["connection_name"] or f"Database {conn_id}"
+
+                if conn_id not in data_by_connection:
+                    data_by_connection[conn_id] = {
+                        "label": conn_name,
+                        "data": [],
+                        "timestamps": []
+                    }
+
+                data_by_connection[conn_id]["data"].append(float(row["avg_ms"]))
+                data_by_connection[conn_id]["timestamps"].append(
+                    row["checked_at"].isoformat()
+                )
+
+            return JSONResponse(content={
+                "datasets": list(data_by_connection.values()),
+                "title": f"Database Latency - Last {hours} Hours"
+            })
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@router.get("/charts/health-metrics")
+async def get_health_metrics_chart_data(hours: int = 24):
+    """Get health metrics time series data for all database connections."""
+    from app.config import get_dsn
+    from app.database import get_connection
+
+    dsn = get_dsn()
+    if not dsn:
+        return JSONResponse(content={"error": "Database not configured"}, status_code=500)
+
+    try:
+        async with get_connection(dsn) as conn:
+            # Get health metrics data from the last X hours
+            rows = await conn.fetch(
+                """
+                SELECT
+                    hmc.region_id,
+                    hmc.checked_at,
+                    hmc.cache_hit_ratio,
+                    hmc.active_connections,
+                    hmc.total_connections,
+                    dc.name as connection_name
+                FROM health_metrics_checks hmc
+                LEFT JOIN database_connections dc ON hmc.region_id::text = dc.id::text
+                WHERE hmc.checked_at >= NOW() - INTERVAL '%s hours'
+                    AND hmc.success = true
+                    AND hmc.region_id IS NOT NULL
+                    AND hmc.region_id ~ '^[0-9]+$'
+                ORDER BY hmc.checked_at ASC
+                """ % hours
+            )
+
+            # Group data by connection and metric type
+            cache_hit_data = {}
+            connections_data = {}
+
+            for row in rows:
+                conn_id = row["region_id"]
+                conn_name = row["connection_name"] or f"Database {conn_id}"
+                timestamp = row["checked_at"].isoformat()
+
+                # Cache hit ratio data
+                if conn_id not in cache_hit_data:
+                    cache_hit_data[conn_id] = {
+                        "label": f"{conn_name} - Cache Hit %",
+                        "data": [],
+                        "timestamps": []
+                    }
+
+                if row["cache_hit_ratio"] is not None:
+                    cache_hit_data[conn_id]["data"].append(float(row["cache_hit_ratio"]))
+                    cache_hit_data[conn_id]["timestamps"].append(timestamp)
+
+                # Active connections data
+                if conn_id not in connections_data:
+                    connections_data[conn_id] = {
+                        "label": f"{conn_name} - Active Conns",
+                        "data": [],
+                        "timestamps": []
+                    }
+
+                if row["active_connections"] is not None:
+                    connections_data[conn_id]["data"].append(int(row["active_connections"]))
+                    connections_data[conn_id]["timestamps"].append(timestamp)
+
+            return JSONResponse(content={
+                "cache_hit_datasets": list(cache_hit_data.values()),
+                "connections_datasets": list(connections_data.values()),
+                "title": f"Database Health Metrics - Last {hours} Hours"
+            })
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@router.get("/charts/performance-summary")
+async def get_performance_summary_chart_data():
+    """Get aggregated performance comparison across all databases."""
+    from app.config import get_dsn
+    from app.database import get_connection
+
+    dsn = get_dsn()
+    if not dsn:
+        return JSONResponse(content={"error": "Database not configured"}, status_code=500)
+
+    try:
+        async with get_connection(dsn) as conn:
+            # Get average latency per database from the last 24 hours
+            latency_rows = await conn.fetch(
+                """
+                SELECT
+                    lc.region_id,
+                    dc.name as connection_name,
+                    ROUND(AVG(lc.avg_ms)::numeric, 2) as avg_latency,
+                    COUNT(*) as check_count
+                FROM latency_checks lc
+                LEFT JOIN database_connections dc ON lc.region_id::text = dc.id::text
+                WHERE lc.checked_at >= NOW() - INTERVAL '24 hours'
+                    AND lc.success = true
+                    AND lc.region_id IS NOT NULL
+                    AND lc.region_id ~ '^[0-9]+$'
+                GROUP BY lc.region_id, dc.name
+                ORDER BY avg_latency ASC
+                """
+            )
+
+            # Get success rate per database from the last 24 hours
+            success_rows = await conn.fetch(
+                """
+                SELECT
+                    cc.region_id,
+                    dc.name as connection_name,
+                    COUNT(*) FILTER (WHERE cc.success = true) as success_count,
+                    COUNT(*) as total_count,
+                    ROUND((COUNT(*) FILTER (WHERE cc.success = true)::numeric / COUNT(*)::numeric * 100), 2) as success_rate
+                FROM connection_checks cc
+                LEFT JOIN database_connections dc ON cc.region_id::text = dc.id::text
+                WHERE cc.checked_at >= NOW() - INTERVAL '24 hours'
+                    AND cc.region_id IS NOT NULL
+                    AND cc.region_id ~ '^[0-9]+$'
+                GROUP BY cc.region_id, dc.name
+                ORDER BY success_rate DESC
+                """
+            )
+
+            # Get cache hit ratio per database from the last 24 hours
+            cache_rows = await conn.fetch(
+                """
+                SELECT
+                    hmc.region_id,
+                    dc.name as connection_name,
+                    ROUND(AVG(hmc.cache_hit_ratio)::numeric, 2) as avg_cache_hit
+                FROM health_metrics_checks hmc
+                LEFT JOIN database_connections dc ON hmc.region_id::text = dc.id::text
+                WHERE hmc.checked_at >= NOW() - INTERVAL '24 hours'
+                    AND hmc.success = true
+                    AND hmc.cache_hit_ratio IS NOT NULL
+                    AND hmc.region_id IS NOT NULL
+                    AND hmc.region_id ~ '^[0-9]+$'
+                GROUP BY hmc.region_id, dc.name
+                ORDER BY avg_cache_hit DESC
+                """
+            )
+
+            # Format data for charts
+            latency_data = {
+                "labels": [row["connection_name"] or f"DB {row['region_id']}" for row in latency_rows],
+                "values": [float(row["avg_latency"]) for row in latency_rows]
+            }
+
+            success_data = {
+                "labels": [row["connection_name"] or f"DB {row['region_id']}" for row in success_rows],
+                "values": [float(row["success_rate"]) for row in success_rows]
+            }
+
+            cache_data = {
+                "labels": [row["connection_name"] or f"DB {row['region_id']}" for row in cache_rows],
+                "values": [float(row["avg_cache_hit"]) for row in cache_rows]
+            }
+
+            return JSONResponse(content={
+                "latency": latency_data,
+                "success_rate": success_data,
+                "cache_hit": cache_data,
+                "title": "24-Hour Performance Summary"
+            })
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)

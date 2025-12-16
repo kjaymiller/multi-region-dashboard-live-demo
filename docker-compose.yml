@@ -17,6 +17,11 @@ services:
 
       # CORS settings (adjust for your frontend domain)
       CORS_ORIGINS: "http://localhost:8000,http://127.0.0.1:8000"
+      
+      # Ollama settings
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:latest}
+      CHAT_ENABLED: ${CHAT_ENABLED:-true}
     depends_on:
       postgres:
         condition: service_healthy
@@ -27,9 +32,9 @@ services:
     profiles:
       - app
 
-  # PostgreSQL Database (local development) - only starts if DATABASE_URL not set
+  # PostgreSQL Database with TimescaleDB (local development) - only starts if DATABASE_URL not set
   postgres:
-    image: postgres:15-alpine
+    image: timescale/timescaledb:latest-pg15
     container_name: postgres_db
     restart: unless-stopped
     environment:
@@ -51,8 +56,32 @@ services:
     profiles:
       - postgres
 
+  # Ollama AI Service for Chat Functionality
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama_service
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    networks:
+      - dashboard_network
+    profiles:
+      - ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 volumes:
   postgres_data:
+    driver: local
+  ollama_data:
     driver: local
 
 networks:
