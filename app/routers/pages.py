@@ -30,7 +30,6 @@ async def dashboard(request: Request):
         {
             "request": request,
             "database": database,
-            "refresh_interval": 30,
             "user_key": user_key,
         },
     )

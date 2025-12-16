@@ -3,41 +3,15 @@
 {% block content %}
 <div class="hero-section">
     <div class="container">
-        <h1>Database Performance Dashboard</h1>
-        <p class="lead mb-0">Test PostgreSQL connectivity and performance</p>
+        <h1>Database Connections Dashboard</h1>
+        <p class="lead mb-0">Manage PostgreSQL database connections</p>
     </div>
 </div>
 
 <div class="container">
 
 
-    <!-- Quick Actions -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <div>
-                            <h5 class="mb-1">Quick Actions</h5>
-                            <small class="text-muted">Test all database functions</small>
-                        </div>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-primary"
-                                    hx-post="/api/database/test-all"
-                                    hx-target="#all-database-result"
-                                    hx-indicator="#all-database-spinner">
-                                <span class="htmx-indicator spinner-border spinner-border-sm me-2" id="all-database-spinner"></span>
-                                Test All Functions
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- All Database Result -->
-    <div id="all-database-result" class="mb-4"></div>
 
     <!-- Database Connections Management -->
     <div id="database-connections-container"
@@ -48,99 +22,9 @@
     <!-- Geographic Map View -->
     {% include "partials/map_view.html" %}
 
-    <!-- Auto-refresh Summary -->
-    <div class="row mb-4" x-data="{ 
-        isLoading: true, 
-        lastUpdate: null,
-        countdown: {{ refresh_interval }} 
-    }" 
-         x-init="setInterval(() => { countdown = countdown > 0 ? countdown - 1 : {{ refresh_interval }} }, 1000)">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                    <span>Live Status</span>
-                    <small class="text-muted" x-show="!isLoading">
-                        Last updated: <span x-text="new Date(lastUpdate).toLocaleTimeString()"></span> • 
-                        Refresh in <span x-text="countdown"></span>s
-                    </small>
-                    <small class="text-muted" x-show="isLoading">
-                        Auto-refreshes every {{ refresh_interval }} seconds
-                    </small>
-                </div>
-                <div class="card-body"
-                     hx-get="/api/database/summary"
-                     hx-trigger="load, every {{ refresh_interval }}s"
-                     hx-swap="innerHTML"
-                     hx-on::before-request="isLoading = true"
-                     hx-on::after-request="isLoading = false; lastUpdate = new Date()">
-                    <div class="text-center text-muted" x-show="isLoading">
-                        <div class="spinner-border spinner-border-sm me-2"></div>
-                        Loading database status...
-                    </div>
-                    <div x-show="!isLoading" x-transition>
-                        <!-- Content will be loaded here by HTMX -->
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- Database Testing Card -->
-    <h4 class="mb-3">Database Testing</h4>
-    <div class="row">
-        <div class="col-lg-6 mx-auto">
-            <div class="card database-card h-100">
-                <div class="card-header">
-                    <h5 class="mb-0">{{ database.name }}</h5>
-                    <small class="opacity-75">Performance Tests</small>
-                </div>
-                <div class="card-body">
-                    <!-- Action Buttons -->
-                    <div class="d-flex flex-wrap gap-2 mb-3">
-                        <button class="btn btn-primary btn-sm"
-                                id="test-connection-btn"
-                                hx-post="/api/database/test"
-                                hx-target="#database-result"
-                                hx-indicator="#database-spinner">
-                            <span class="htmx-indicator spinner-border spinner-border-sm me-1" id="database-spinner"></span>
-                            Test Connection
-                        </button>
 
-                        <button class="btn btn-outline-primary btn-sm"
-                                id="test-latency-btn"
-                                hx-post="/api/database/latency?iterations=5"
-                                hx-target="#database-result"
-                                hx-indicator="#database-spinner">
-                            Measure Latency
-                        </button>
 
-                        <button class="btn btn-outline-secondary btn-sm"
-                                id="test-health-btn"
-                                hx-post="/api/database/health"
-                                hx-target="#database-result"
-                                hx-indicator="#database-spinner">
-                            Health Check
-                        </button>
-
-                        <button class="btn btn-outline-warning btn-sm"
-                                id="test-load-btn"
-                                hx-post="/api/database/load-test?concurrent=10"
-                                hx-target="#database-result"
-                                hx-indicator="#database-spinner">
-                            Load Test (10)
-                        </button>
-                    </div>
-
-                    <!-- Result Container -->
-                    <div class="result-container" id="database-result">
-                        <div class="text-center text-muted">
-                            <small>Click a button to test the database</small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
 
 
@@ -202,139 +86,7 @@
         </div>
     </div>
 
-    <!-- Check History -->
-    <div class="row mt-4" x-data="{ 
-        currentView: 'table',
-        refreshChart() {
-            // Find the chart component and refresh it
-            const chartElement = document.querySelector('#check-history-chart');
-            if (chartElement && chartElement.__x) {
-                chartElement.__x.$data.refresh();
-            }
-        }
-    }">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5 class="mb-0">Recent Check History</h5>
-                        <small class="text-muted">Last 20 checks across all regions</small>
-                    </div>
-                    <div class="d-flex gap-2">
-                        <!-- View Toggle -->
-                        <div class="btn-group btn-group-sm" role="group">
-                            <button type="button"
-                                    class="btn btn-outline-secondary"
-                                    :class="currentView === 'table' ? 'active' : ''"
-                                    @click="currentView = 'table'">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-table" viewBox="0 0 16 16">
-                                    <path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm15 2h-4v3h4zm0 4h-4v3h4zm0 4h-4v3h3a1 1 0 0 0 1-1zm-5 3v-3H6v3zm-5 0v-3H1v2a1 1 0 0 0 1 1zm-4-4h4V8H1zm0-4h4V4H1zm5-3v3h4V4zm4 4H6v3h4z"/>
-                                </svg>
-                                Table
-                            </button>
-                            <button type="button"
-                                    class="btn btn-outline-secondary"
-                                    :class="currentView === 'chart' ? 'active' : ''"
-                                    @click="currentView = 'chart'">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-graph-up" viewBox="0 0 16 16">
-                                    <path fill-rule="evenodd" d="M0 0h1v15h15v1H0zm14.817 3.113a.5.5 0 0 1 .07.704l-4.5 5.5a.5.5 0 0 1-.74.037L7.06 6.767l-3.656 5.027a.5.5 0 0 1-.808-.588l4-5.5a.5.5 0 0 1 .758-.06l2.609 2.61 4.15-5.073a.5.5 0 0 1 .704-.07"/>
-                                </svg>
-                                Chart
-                            </button>
-                        </div>
-                        <!-- Refresh Button -->
-                        <button class="btn btn-sm btn-outline-secondary"
-                                @click="currentView === 'table' ? htmx.trigger('#check-history-table', 'check-updated') : refreshChart()">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
-                                <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
-                                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
-                            </svg>
-                            Refresh
-                        </button>
-                    </div>
-                </div>
-                <div class="card-body p-0">
-                    <!-- Table View -->
-                    <div x-show="currentView === 'table'"
-                         x-transition:enter="transition ease-out duration-200"
-                         x-transition:enter-start="opacity-0 transform -translate-y-4"
-                         x-transition:enter-end="opacity-100 transform translate-y-0"
-                         x-transition:leave="transition ease-in duration-150"
-                         x-transition:leave-start="opacity-100 transform translate-y-0"
-                         x-transition:leave-end="opacity-0 transform -translate-y-4"
-                         id="check-history-table"
-                         hx-get="/api/checks/history?limit=20"
-                         hx-trigger="load, check-updated from:body"
-                         hx-swap="innerHTML">
-                        <div class="text-center text-muted py-4">
-                            <div class="spinner-border spinner-border-sm me-2"></div>
-                            Loading check history...
-                        </div>
-                    </div>
-                    <!-- Chart View -->
-                    <div x-show="currentView === 'chart'" 
-                         x-transition:enter="transition ease-out duration-200"
-                         x-transition:enter-start="opacity-0 transform -translate-y-4"
-                         x-transition:enter-end="opacity-100 transform translate-y-0"
-                         x-transition:leave="transition ease-in duration-150"
-                         x-transition:leave-start="opacity-100 transform translate-y-0"
-                         x-transition:leave-end="opacity-0 transform -translate-y-4"
-                         id="check-history-chart"
-                         x-data="chartManager()">
-                        
-                        <!-- Chart Type Selector -->
-                        <div class="mb-3">
-                            <div class="btn-group btn-group-sm" role="group">
-                                <button type="button"
-                                        class="btn btn-outline-primary"
-                                        :class="selectedChart === 'connection' ? 'active' : ''"
-                                        @click="switchChart('connection')">
-                                    Connection
-                                </button>
-                                <button type="button"
-                                        class="btn btn-outline-primary"
-                                        :class="selectedChart === 'latency' ? 'active' : ''"
-                                        @click="switchChart('latency')">
-                                    Latency
-                                </button>
-                                <button type="button"
-                                        class="btn btn-outline-primary"
-                                        :class="selectedChart === 'load_test' ? 'active' : ''"
-                                        @click="switchChart('load_test')">
-                                    Load Test
-                                </button>
-                                <button type="button"
-                                        class="btn btn-outline-primary"
-                                        :class="selectedChart === 'health' ? 'active' : ''"
-                                        @click="switchChart('health')">
-                                    Health
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <!-- Loading State -->
-                        <div x-show="isLoading" class="text-center text-muted py-4">
-                            <div class="spinner-border spinner-border-sm me-2"></div>
-                            Loading chart data...
-                        </div>
-                        
-                        <!-- Error State -->
-                        <div x-show="error" class="alert alert-warning" x-text="error"></div>
-                        
-                        <!-- Chart Container -->
-                        <div x-show="!isLoading && !error" class="chart-container" style="position: relative; height: 400px;">
-                            <canvas :id="chartId"></canvas>
-                        </div>
-                        
-                        <!-- No Data State -->
-                        <div x-show="!isLoading && !error && !hasData" class="text-center text-muted py-4">
-                            <small>No data available for this chart type</small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+
 </div>
 
 <footer class="mt-5 py-4 bg-light">
@@ -346,54 +98,7 @@
 
 {% block scripts %}
 
-<!-- Fallback for HTMX buttons -->
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Check if HTMX is loaded
-    if (typeof htmx === 'undefined') {
-        console.error('HTMX not loaded!');
-        return;
-    }
-    
-    // Add fallback click handlers for buttons
-    const buttons = [
-        { id: 'test-connection-btn', url: '/api/database/test' },
-        { id: 'test-latency-btn', url: '/api/database/latency?iterations=5' },
-        { id: 'test-health-btn', url: '/api/database/health' },
-        { id: 'test-load-btn', url: '/api/database/load-test?concurrent=10' }
-    ];
-    
-    buttons.forEach(({ id, url }) => {
-        const btn = document.getElementById(id);
-        if (btn) {
-            btn.addEventListener('click', function(e) {
-                e.preventDefault();
-                console.log('Fallback: Button clicked:', id);
-                
-                // Show loading
-                const spinner = document.getElementById('database-spinner');
-                if (spinner) spinner.style.display = 'inline-block';
-                
-                // Make request
-                fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'} })
-                    .then(response => response.text())
-                    .then(html => {
-                        const target = document.getElementById('database-result');
-                        if (target) target.innerHTML = html;
-                    })
-                    .catch(error => {
-                        console.error('Fallback request failed:', error);
-                        const target = document.getElementById('database-result');
-                        if (target) target.innerHTML = '<div class="alert alert-danger">Request failed: ' + error.message + '</div>';
-                    })
-                    .finally(() => {
-                        if (spinner) spinner.style.display = 'none';
-                    });
-            });
-        }
-    });
-});
-</script>
+
 
 <!-- Alpine.js Components -->
 <script>
@@ -460,145 +165,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }));
         
-        Alpine.data('chartManager', () => ({
-            selectedChart: 'connection',
-            isLoading: true,
-            error: null,
-            hasData: false,
-            chartId: 'chart-' + Math.random().toString(36).substr(2, 9),
-            chart: null,
-            chartData: null,
-            
-            async init() {
-                await this.loadChartData();
-                
-                // Watch for chart type changes
-                this.$watch('selectedChart', () => {
-                    this.updateChart();
-                });
-            },
-            
-            async loadChartData() {
-                this.isLoading = true;
-                this.error = null;
-                
-                try {
-                    const response = await fetch('/api/checks/chart-data');
-                    const data = await response.json();
-                    
-                    if (response.ok) {
-                        this.chartData = data;
-                        this.$nextTick(() => {
-                            this.updateChart();
-                        });
-                    } else {
-                        this.error = 'Failed to load chart data';
-                    }
-                } catch (error) {
-                    this.error = 'Error loading chart data: ' + error.message;
-                } finally {
-                    this.isLoading = false;
-                }
-            },
-            
-            switchChart(type) {
-                this.selectedChart = type;
-            },
-            
-            updateChart() {
-                if (!this.chartData) return;
-                
-                // Destroy existing chart
-                if (this.chart) {
-                    this.chart.destroy();
-                }
-                
-                const ctx = document.getElementById(this.chartId);
-                if (!ctx) return;
-                
-                const chartTypeData = this.chartData[this.selectedChart];
-                this.hasData = chartTypeData && chartTypeData.datasets && chartTypeData.datasets.length > 0;
-                
-                if (!this.hasData) return;
-                
-                // Chart configuration
-                const config = {
-                    type: 'line',
-                    data: {
-                        datasets: chartTypeData.datasets
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            title: {
-                                display: true,
-                                text: this.getChartTitle(),
-                                font: {
-                                    size: 16
-                                }
-                            },
-                            legend: {
-                                display: true,
-                                position: 'top'
-                            }
-                        },
-                        scales: {
-                            x: {
-                                type: 'time',
-                                time: {
-                                    displayFormats: {
-                                        hour: 'MMM dd HH:mm'
-                                    }
-                                },
-                                title: {
-                                    display: true,
-                                    text: 'Time'
-                                }
-                            },
-                            y: {
-                                title: {
-                                    display: true,
-                                    text: this.getYAxisLabel()
-                                },
-                                beginAtZero: this.selectedChart !== 'latency'
-                            }
-                        },
-                        interaction: {
-                            mode: 'index',
-                            intersect: false
-                        }
-                    }
-                };
-                
-                this.chart = new Chart(ctx, config);
-            },
-            
-            getChartTitle() {
-                const titles = {
-                    'connection': 'Connection Tests (Success Rate %)',
-                    'latency': 'Latency Measurements (ms)',
-                    'load_test': 'Load Test Performance (Queries/sec)',
-                    'health': 'Health Check Metrics'
-                };
-                return titles[this.selectedChart] || 'Database Metrics';
-            },
-            
-            getYAxisLabel() {
-                const labels = {
-                    'connection': 'Success Rate (%)',
-                    'latency': 'Latency (ms)',
-                    'load_test': 'Queries per Second',
-                    'health': 'Health Score'
-                };
-                return labels[this.selectedChart] || 'Value';
-            },
-            
-            // Refresh chart data
-            async refresh() {
-                await this.loadChartData();
-            }
-        }));
+
     });
 </script>
 {% endblock %}

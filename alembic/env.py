@@ -1,6 +1,6 @@
 """Alembic environment configuration."""
 
-from __future__ import with_literals
+
 import asyncio
 from logging.config import fileConfig
 from sqlalchemy import pool

@@ -1,10 +1,10 @@
 """API endpoints for database connection management using PostgreSQL backend."""
 
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
-import asyncio
 
 from app.db_manager_postgres import DatabaseConnection, DatabaseManager
 
@@ -102,10 +102,10 @@ async def create_connection(request: Request, conn_data: DatabaseCreateRequest):
 
     if not success:
         # Return error HTML
-        return templates.TemplateResponse(
-            "partials/connection_result.html",
-            {"request": request, "result": {"success": False, "error": "Failed to save database connection"}},
-            {"HX-Trigger": "connection-error"}
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(
+            content='<div class="alert alert-danger">Failed to save database connection</div>',
+            headers={"HX-Trigger": "connection-error"}
         )
 
     # Test connection using the provided password
@@ -113,23 +113,21 @@ async def create_connection(request: Request, conn_data: DatabaseCreateRequest):
 
     if not test_result.get("success", False):
         # Return test failure HTML
-        return templates.TemplateResponse(
-            "partials/connection_result.html",
-            {"request": request, "result": test_result},
-            {"HX-Trigger": "connection-test-failed"}
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(
+            content=f'<div class="alert alert-warning">Connection test failed: {test_result.get("error", "Unknown error")}</div>',
+            headers={"HX-Trigger": "connection-test-failed"}
         )
 
     # Return success HTML
-    response = templates.TemplateResponse(
-        "partials/connection_result.html",
-        {"request": request, "result": test_result},
-        {
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(
+        content=f'<div class="alert alert-success">Database connection "{connection.name}" created and tested successfully!</div>',
+        headers={
             "HX-Trigger": "connection-created",
             "HX-Trigger-After-Swap": "htmx.trigger('#database-connections-container', 'load'); document.getElementById('connection-form-container').style.display='none';"
         }
     )
-
-    return response
 
 
 @router.post("/connections/{connection_id}/test")
@@ -146,9 +144,9 @@ async def test_connection(connection_id: str):
     # 1. Ask user to re-enter password for testing
     # 2. Use a secure vault for password storage
     # 3. Store encrypted passwords instead of hashes
-    
+
     return JSONResponse(content={
-        "success": False, 
+        "success": False,
         "error": "Password testing requires re-entering credentials (security limitation of hash storage)"
     })
 

@@ -2,9 +2,9 @@
 
 import secrets
 from dataclasses import dataclass, field
-from typing import Optional
-import bcrypt
+
 import asyncpg
+import bcrypt
 
 from app.config import get_database
 
@@ -12,22 +12,22 @@ from app.config import get_database
 @dataclass
 class DatabaseConnection:
     """Represents a database connection configuration."""
-    
+
     id: str
     name: str
     host: str
     port: int
     database: str
     username: str
-    password: Optional[str] = field(repr=False, default=None)  # Plain text for input, not stored
-    password_hash: Optional[str] = field(repr=False, default=None)    # Hashed password
-    salt: Optional[str] = field(repr=False, default=None)        # Salt for password
+    password: str | None = field(repr=False, default=None)  # Plain text for input, not stored
+    password_hash: str | None = field(repr=False, default=None)    # Hashed password
+    salt: str | None = field(repr=False, default=None)        # Salt for password
     ssl_mode: str = "require"
-    region: Optional[str] = None
-    cloud_provider: Optional[str] = None
+    region: str | None = None
+    cloud_provider: str | None = None
     is_active: bool = True
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
     @property
     def dsn(self) -> str:
@@ -54,27 +54,27 @@ class DatabaseManager:
         """Save a database connection with hashed password."""
         try:
             pool = await self._get_pool()
-            
+
             # Hash password with salt
             if not connection.password:
                 raise ValueError("Password is required")
             salt = secrets.token_hex(16)
             password_hash = bcrypt.hashpw(
-                connection.password.encode(), 
+                connection.password.encode(),
                 bcrypt.gensalt(rounds=12)  # Using bcrypt with rounds=12
             ).decode()
-            
+
             async with pool.acquire() as conn:
                 if connection.id and await self._connection_exists(connection.id):
                     # Update existing connection
                     await conn.execute("""
                         UPDATE database_connections 
-                        SET name = $1, host = $2, port = $3, database_name = $4,
+                        SET name = $1, host = $2, port = $3, database = $4,
                             username = $5, password_hash = $6, salt = $7, 
                             ssl_mode = $8, region = $9, cloud_provider = $10,
                             is_active = $11, updated_at = CURRENT_TIMESTAMP
                         WHERE id = $12
-                    """, 
+                    """,
                         connection.name, connection.host, connection.port, connection.database,
                         connection.username, password_hash, salt, connection.ssl_mode,
                         connection.region, connection.cloud_provider, connection.is_active,
@@ -85,21 +85,21 @@ class DatabaseManager:
                     conn_id = connection.id or f"db_{secrets.token_hex(8)}"
                     await conn.execute("""
                         INSERT INTO database_connections 
-                        (id, name, host, port, database_name, username, password_hash, 
+                        (id, name, host, port, database, username, password_hash, 
                          salt, ssl_mode, region, cloud_provider, is_active)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                    """, 
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    """,
                         conn_id, connection.name, connection.host, connection.port,
                         connection.database, connection.username, password_hash, salt,
                         connection.ssl_mode, connection.region, connection.cloud_provider,
                         connection.is_active
                     )
                     connection.id = conn_id
-                    
+
                 # Update connection object with generated hash and salt
                 connection.password_hash = password_hash
                 connection.salt = salt
-                
+
             return True
         except Exception:
             return False
@@ -109,12 +109,12 @@ class DatabaseManager:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             result = await conn.fetchval(
-                "SELECT 1 FROM database_connections WHERE id = $1", 
+                "SELECT 1 FROM database_connections WHERE id = $1",
                 connection_id
             )
             return result is not None
 
-    async def get_connection(self, connection_id: str) -> Optional[DatabaseConnection]:
+    async def get_connection(self, connection_id: str) -> DatabaseConnection | None:
         """Get a specific database connection."""
         try:
             pool = await self._get_pool()
@@ -126,7 +126,7 @@ class DatabaseManager:
                     FROM database_connections 
                     WHERE id = $1 AND is_active = true
                 """, connection_id)
-                
+
                 if row:
                     return DatabaseConnection(
                         id=row['id'],
@@ -167,14 +167,14 @@ class DatabaseManager:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch("""
-                    SELECT id, name, host, port, database_name, username,
+                    SELECT id, name, host, port, database, username,
                            password_hash, salt, ssl_mode, region, cloud_provider,
                            is_active, created_at, updated_at
                     FROM database_connections 
                     WHERE is_active = true
                     ORDER BY created_at DESC
                 """)
-                
+
                 connections = []
                 for row in rows:
                     connections.append(DatabaseConnection(
@@ -182,7 +182,7 @@ class DatabaseManager:
                         name=row['name'],
                         host=row['host'],
                         port=row['port'],
-                        database=row['database_name'],
+                        database=row['database'],
                         username=row['username'],
                         password_hash=row['password_hash'],
                         salt=row['salt'],
@@ -193,14 +193,13 @@ class DatabaseManager:
                         created_at=row['created_at'].isoformat() if row['created_at'] else None,
                         updated_at=row['updated_at'].isoformat() if row['updated_at'] else None,
                     ))
-                
+
                 return connections
         except Exception:
             return []
 
     async def test_connection_with_password(self, connection: DatabaseConnection, password: str) -> dict:
         """Test a database connection using provided password."""
-        import asyncio
         import time
 
         async def _test():
@@ -212,18 +211,24 @@ class DatabaseManager:
                     "require"
                     if not any(
                         local_host in connection.host.lower()
-                        for local_host in ["localhost", "127.0.0.1", "postgres:"]
+                        for local_host in ["localhost", "127.0.0.1", "postgres"]
                     )
                     else None
                 )
 
                 # Build DSN with actual password for testing
-                test_dsn = (
-                    f"postgresql://{connection.username}:{password}@"
-                    f"{connection.host}:{connection.port}/{connection.database}?ssl={ssl_mode}"
-                )
-
-                conn = await asyncpg.connect(test_dsn, ssl=ssl_mode is not None)
+                if ssl_mode:
+                    test_dsn = (
+                        f"postgresql://{connection.username}:{password}@"
+                        f"{connection.host}:{connection.port}/{connection.database}?ssl=require"
+                    )
+                    conn = await asyncpg.connect(test_dsn, ssl=True)
+                else:
+                    test_dsn = (
+                        f"postgresql://{connection.username}:{password}@"
+                        f"{connection.host}:{connection.port}/{connection.database}"
+                    )
+                    conn = await asyncpg.connect(test_dsn, ssl=False)
 
                 result = await conn.fetchrow("""
                     SELECT
