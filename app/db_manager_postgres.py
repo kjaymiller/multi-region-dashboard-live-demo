@@ -157,7 +157,9 @@ class DatabaseManager:
                 connection.salt = salt
 
             return True
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to save connection: {e}", exc_info=True)
             return False
 
     async def _connection_exists(self, connection_id: int) -> bool:
