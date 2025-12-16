@@ -1,7 +1,11 @@
 # PostgreSQL Testing Dashboard Presentation
+
 Jay Miller
-Founder Black PYthon Devs
-Staff Product Advocate - Aiven
+
+- Founder Black Python Devs - <https://blackpythondevs.com>
+- Staff Product Advocate - Aiven
+  - Databases starting at $5
+  - Free Tier Data Streaming (Apache Kafka)
 
 ---
 
@@ -9,9 +13,15 @@ Staff Product Advocate - Aiven
 
 **Telemetry tells a story but not quickly**
 
+- Elephant in the Room
+- Jeff made something
+
+---
+
+## Why did I make this (_Professional Edition_)
+
 - Database Ecosystem monitoring tools 👎
 - Data is scattered across multiple regions and systems
-- Jeff made something
 - Performance patterns require manual correlation
 - Quick insights are impossible manually with in distributed systems
 - A unified view tells a story at a glance
@@ -95,6 +105,8 @@ Database --> region --> lookup table --> Lat/Long
 - 8 chart types out of the box (line, bar, pie, etc.)
 - Responsive/High Def
 
+more at <https://www.chartjs.org/docs/latest/getting-started/usage.html>
+
 ---
 
 ```html
@@ -102,8 +114,76 @@ Database --> region --> lookup table --> Lat/Long
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 ```
+
+---
+
+```js
+  <script>
+    (function() {
+      const chartId = '{{ chart_id }}';
+
+      // Prepare data from server
+      const queryData = {{ result.pg_stat_statements | tojson }};
 ```
 
+---
+
+```js
+    // Generate labels (truncate queries for readability)
+    const labels = queryData.map((q, i) => {
+        const preview = q.query.replace(/\s+/g, ' ').substring(0, 30);
+        return `Q${i+1}: ${preview}...`;
+    });
+
+    // Color palette
+    const colors = [
+        'rgba(255, 53, 84, 0.8)',   // Aiven red
+        ...
+
+    ];
+```
+
+---
+
+ ```js
+    const chartConfig = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          ...
+          }
+        },
+        scales: {
+          ...
+        }
+    };
+    ```
+
+---
+
+```js
+    // Calls Chart
+    const callsCanvas = document.getElementById('callsChart_' + chartId);
+```
+
+---
+
+```js
+  if (callsCanvas) {
+    new Chart(callsCanvas, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Number of Calls',
+          data: queryData.map(q => q.calls),
+          backgroundColor: colors,
+        }]
+      },
+      options: chartConfig
+    });
+  }
+```
 
 ---
 
