@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 import asyncpg
 
 from app.config import get_dsn
-from app.db_manager import DatabaseConnection, db_manager
+from app.db_manager_postgres import DatabaseConnection
 
 
 @asynccontextmanager
@@ -226,6 +226,7 @@ async def get_health_metrics() -> dict:
                         pg_stat_result = await conn.fetch(
                             """
                             SELECT
+                                queryid,
                                 LEFT(query, 150) AS query_preview,
                                 calls,
                                 total_exec_time,
@@ -238,6 +239,7 @@ async def get_health_metrics() -> dict:
                             WHERE query NOT LIKE '%pg_stat_statements%'
                               AND query NOT LIKE '%pg_catalog%'
                               AND query NOT LIKE '%<insufficient privilege>%'
+                              AND queryid IS NOT NULL
                             ORDER BY calls DESC
                             LIMIT 10
                             """
@@ -248,6 +250,7 @@ async def get_health_metrics() -> dict:
                             try:
                                 pg_stat_statements.append(
                                     {
+                                        "queryid": str(row["queryid"]) if row["queryid"] else None,
                                         "query": row["query_preview"]
                                         + ("..." if len(row["query_preview"]) >= 150 else ""),
                                         "calls": int(row["calls"]),
@@ -304,7 +307,9 @@ async def get_health_metrics() -> dict:
         return {"success": False, "error": str(e)}
 
 
-async def get_connection_health_metrics(connection: DatabaseConnection, timeout: float = 10.0) -> dict:
+async def get_connection_health_metrics(
+    connection: DatabaseConnection, timeout: float = 10.0
+) -> dict:
     """Get health metrics for a specific database connection with timeout."""
     result = {
         "success": True,
@@ -316,7 +321,7 @@ async def get_connection_health_metrics(connection: DatabaseConnection, timeout:
         "pg_stat_statements": None,
         "pg_stat_statements_available": False,
         "warnings": [],
-        "connection_id": connection.id,
+        "connection_id": str(connection.id),
         "connection_name": connection.name,
         "host": connection.host,
         "port": connection.port,
@@ -324,14 +329,8 @@ async def get_connection_health_metrics(connection: DatabaseConnection, timeout:
     }
 
     try:
-        # Decrypt password if needed
+        # Password is already decrypted when retrieved from database
         password = connection.password
-        if hasattr(db_manager, '_decrypt') and password:
-            try:
-                password = db_manager._decrypt(password)
-            except Exception:
-                # If decryption fails, assume password is already in plain text
-                pass
 
         # Use SSL for remote connections, disable for local development
         ssl_mode = (
@@ -355,7 +354,9 @@ async def get_connection_health_metrics(connection: DatabaseConnection, timeout:
                 ssl_context = ssl.create_default_context()
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
-                conn = await asyncio.wait_for(asyncpg.connect(dsn, ssl=ssl_context), timeout=timeout)
+                conn = await asyncio.wait_for(
+                    asyncpg.connect(dsn, ssl=ssl_context), timeout=timeout
+                )
             else:
                 conn = await asyncio.wait_for(asyncpg.connect(dsn, ssl=False), timeout=timeout)
         else:
@@ -384,7 +385,7 @@ async def get_connection_health_metrics(connection: DatabaseConnection, timeout:
                         WHERE datname = current_database()
                         """
                     ),
-                    timeout=timeout
+                    timeout=timeout,
                 )
                 result["cache_hit_ratio"] = (
                     float(cache_result["cache_hit_ratio"]) if cache_result["cache_hit_ratio"] else 0
@@ -411,7 +412,7 @@ async def get_connection_health_metrics(connection: DatabaseConnection, timeout:
                         WHERE datname = current_database()
                         """
                     ),
-                    timeout=timeout
+                    timeout=timeout,
                 )
                 result["active_connections"] = conn_result["active_connections"]
                 result["idle_connections"] = conn_result["idle_connections"]
@@ -431,7 +432,7 @@ async def get_connection_health_metrics(connection: DatabaseConnection, timeout:
                     conn.fetchrow(
                         "SELECT pg_size_pretty(pg_database_size(current_database())) AS db_size"
                     ),
-                    timeout=timeout
+                    timeout=timeout,
                 )
                 result["db_size"] = size_result["db_size"]
             except asyncio.TimeoutError:
@@ -450,7 +451,7 @@ async def get_connection_health_metrics(connection: DatabaseConnection, timeout:
                     conn.fetchval(
                         "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements')"
                     ),
-                    timeout=timeout
+                    timeout=timeout,
                 )
 
                 if ext_check:
@@ -459,6 +460,7 @@ async def get_connection_health_metrics(connection: DatabaseConnection, timeout:
                             conn.fetch(
                                 """
                                 SELECT
+                                    queryid,
                                     LEFT(query, 150) AS query_preview,
                                     calls,
                                     total_exec_time,
@@ -471,11 +473,12 @@ async def get_connection_health_metrics(connection: DatabaseConnection, timeout:
                                 WHERE query NOT LIKE '%pg_stat_statements%'
                                   AND query NOT LIKE '%pg_catalog%'
                                   AND query NOT LIKE '%<insufficient privilege>%'
+                                  AND queryid IS NOT NULL
                                 ORDER BY calls DESC
                                 LIMIT 10
                                 """
                             ),
-                            timeout=timeout
+                            timeout=timeout,
                         )
 
                         pg_stat_statements = []
@@ -483,6 +486,7 @@ async def get_connection_health_metrics(connection: DatabaseConnection, timeout:
                             try:
                                 pg_stat_statements.append(
                                     {
+                                        "queryid": str(row["queryid"]) if row["queryid"] else None,
                                         "query": row["query_preview"]
                                         + ("..." if len(row["query_preview"]) >= 150 else ""),
                                         "calls": int(row["calls"]),
@@ -534,8 +538,15 @@ async def get_connection_health_metrics(connection: DatabaseConnection, timeout:
                 for k, v in result.items()
                 if k
                 not in [
-                    "success", "warnings", "pg_stat_statements", "pg_stat_statements_available",
-                    "connection_id", "connection_name", "host", "port", "database"
+                    "success",
+                    "warnings",
+                    "pg_stat_statements",
+                    "pg_stat_statements_available",
+                    "connection_id",
+                    "connection_name",
+                    "host",
+                    "port",
+                    "database",
                 ]
             ):
                 result["success"] = False
@@ -570,14 +581,8 @@ async def measure_connection_latency(
 ) -> dict:
     """Measure latency to a specific database connection over multiple iterations."""
     try:
-        # Decrypt password if needed
+        # Password is already decrypted when retrieved from database
         password = connection.password
-        if hasattr(db_manager, '_decrypt') and password:
-            try:
-                password = db_manager._decrypt(password)
-            except Exception:
-                # If decryption fails, assume password is already in plain text
-                pass
 
         # Use SSL for remote connections, disable for local development
         ssl_mode = (
@@ -612,7 +617,9 @@ async def measure_connection_latency(
                 ssl_context = ssl.create_default_context()
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
-                conn = await asyncio.wait_for(asyncpg.connect(dsn, ssl=ssl_context), timeout=timeout)
+                conn = await asyncio.wait_for(
+                    asyncpg.connect(dsn, ssl=ssl_context), timeout=timeout
+                )
             else:
                 conn = await asyncio.wait_for(asyncpg.connect(dsn, ssl=False), timeout=timeout)
 
@@ -654,14 +661,8 @@ async def run_connection_load_test(
 ) -> dict:
     """Run a load test with concurrent connections to a specific database."""
     try:
-        # Decrypt password if needed
+        # Password is already decrypted when retrieved from database
         password = connection.password
-        if hasattr(db_manager, '_decrypt') and password:
-            try:
-                password = db_manager._decrypt(password)
-            except Exception:
-                # If decryption fails, assume password is already in plain text
-                pass
 
         # Use SSL for remote connections, disable for local development
         ssl_mode = (
@@ -695,7 +696,9 @@ async def run_connection_load_test(
                 ssl_context = ssl.create_default_context()
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
-                conn = await asyncio.wait_for(asyncpg.connect(dsn, ssl=ssl_context), timeout=timeout)
+                conn = await asyncio.wait_for(
+                    asyncpg.connect(dsn, ssl=ssl_context), timeout=timeout
+                )
             else:
                 conn = await asyncio.wait_for(asyncpg.connect(dsn, ssl=False), timeout=timeout)
 
@@ -759,7 +762,7 @@ async def save_connection_check(result: dict, user_key: str | None = None) -> No
                     pg_version, error_message, user_key
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
-                "database",
+                result.get("connection_id"),
                 result.get("success", False),
                 result.get("latency_ms"),
                 result.get("server_ip"),
@@ -795,7 +798,7 @@ async def save_latency_check(result: dict, user_key: str | None = None) -> None:
                     timings, error_message, user_key
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 """,
-                "database",
+                result.get("connection_id"),
                 result.get("success", False),
                 result.get("iterations"),
                 result.get("min_ms"),
@@ -826,7 +829,7 @@ async def save_load_test_check(result: dict, user_key: str | None = None) -> Non
                     avg_ms, total_time_ms, queries_per_second, error_message, user_key
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 """,
-                "database",
+                result.get("connection_id"),
                 result.get("success", False),
                 result.get("concurrent"),
                 result.get("min_ms"),
@@ -855,7 +858,7 @@ async def save_health_metrics_check(result: dict, user_key: str | None = None) -
             import json
 
             warnings_json = json.dumps(result.get("warnings", []))
-            
+
             # Use connection_id as region_id for proper tracking, fallback to "database"
             region_id = result.get("connection_id", "database")
 
@@ -998,7 +1001,19 @@ async def get_all_recent_checks(limit: int = 20) -> list[dict]:
                 limit,
             )
 
-            return [dict(row) for row in rows]
+            return [
+                {
+                    "check_type": row["check_type"],
+                    "region_id": row["region_id"],
+                    "checked_at": row["checked_at"],
+                    "success": row["success"],
+                    "metric_value": row["metric_value"],
+                    "metric_unit": row["metric_unit"],
+                    "error_message": row["error_message"],
+                    "user_key": row["user_key"],
+                }
+                for row in rows
+            ]
     except Exception:
         # Table might not exist yet
         return []

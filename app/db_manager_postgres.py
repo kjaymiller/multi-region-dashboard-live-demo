@@ -1,10 +1,12 @@
 """Secure database connection management using PostgreSQL backend."""
 
-import secrets
+import base64
+import os
 from dataclasses import dataclass, field
 
 import asyncpg
 import bcrypt
+from cryptography.fernet import Fernet
 
 from app.config import get_database
 
@@ -13,7 +15,7 @@ from app.config import get_database
 class DatabaseConnection:
     """Represents a database connection configuration."""
 
-    id: str
+    id: int
     name: str
     host: str
     port: int
@@ -43,6 +45,44 @@ class DatabaseManager:
 
     def __init__(self):
         self._pool = None
+        self._cipher = None
+
+    def _get_cipher(self) -> Fernet:
+        """Get or create the encryption cipher."""
+        if self._cipher is None:
+            # Get encryption key from environment or generate one
+            encryption_key = os.getenv("DB_PASSWORD_ENCRYPTION_KEY")
+            if not encryption_key:
+                # Generate a new key and warn user
+                encryption_key = Fernet.generate_key().decode()
+                import warnings
+
+                warnings.warn(
+                    f"No DB_PASSWORD_ENCRYPTION_KEY found in environment. "
+                    f"Generated temporary key: {encryption_key}\n"
+                    f"Add this to your .env file: DB_PASSWORD_ENCRYPTION_KEY={encryption_key}",
+                    stacklevel=2,
+                )
+
+            # Ensure key is in bytes
+            if isinstance(encryption_key, str):
+                encryption_key = encryption_key.encode()
+
+            self._cipher = Fernet(encryption_key)
+        return self._cipher
+
+    def _encrypt_password(self, password: str) -> str:
+        """Encrypt a password for storage."""
+        cipher = self._get_cipher()
+        encrypted = cipher.encrypt(password.encode())
+        return base64.b64encode(encrypted).decode()
+
+    def _decrypt_password(self, encrypted_password: str) -> str:
+        """Decrypt a stored password."""
+        cipher = self._get_cipher()
+        encrypted = base64.b64decode(encrypted_password.encode())
+        decrypted = cipher.decrypt(encrypted)
+        return decrypted.decode()
 
     async def _get_pool(self):
         """Get or create database connection pool."""
@@ -51,18 +91,17 @@ class DatabaseManager:
         return self._pool
 
     async def save_connection(self, connection: DatabaseConnection) -> bool:
-        """Save a database connection with hashed password."""
+        """Save a database connection with encrypted password."""
         try:
             pool = await self._get_pool()
 
-            # Hash password with salt
+            # Encrypt password
             if not connection.password:
                 raise ValueError("Password is required")
-            salt = secrets.token_hex(16)
-            password_hash = bcrypt.hashpw(
-                connection.password.encode(),
-                bcrypt.gensalt(rounds=12),  # Using bcrypt with rounds=12
-            ).decode()
+
+            encrypted_password = self._encrypt_password(connection.password)
+            # Keep salt column for backward compatibility but don't use it
+            salt = ""
 
             async with pool.acquire() as conn:
                 if connection.id and await self._connection_exists(connection.id):
@@ -81,7 +120,7 @@ class DatabaseManager:
                         connection.port,
                         connection.database,
                         connection.username,
-                        password_hash,
+                        encrypted_password,
                         salt,
                         connection.ssl_mode,
                         connection.region,
@@ -90,22 +129,21 @@ class DatabaseManager:
                         connection.id,
                     )
                 else:
-                    # Create new connection
-                    conn_id = connection.id or f"db_{secrets.token_hex(8)}"
-                    await conn.execute(
+                    # Create new connection - let PostgreSQL auto-generate the ID
+                    conn_id = await conn.fetchval(
                         """
                         INSERT INTO database_connections
-                        (id, name, host, port, database_name, username, password_hash,
+                        (name, host, port, database_name, username, password_hash,
                          salt, ssl_mode, region, cloud_provider, is_active)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                        RETURNING id
                     """,
-                        conn_id,
                         connection.name,
                         connection.host,
                         connection.port,
                         connection.database,
                         connection.username,
-                        password_hash,
+                        encrypted_password,
                         salt,
                         connection.ssl_mode,
                         connection.region,
@@ -114,15 +152,15 @@ class DatabaseManager:
                     )
                     connection.id = conn_id
 
-                # Update connection object with generated hash and salt
-                connection.password_hash = password_hash
+                # Update connection object with encrypted password
+                connection.password_hash = encrypted_password
                 connection.salt = salt
 
             return True
         except Exception:
             return False
 
-    async def _connection_exists(self, connection_id: str) -> bool:
+    async def _connection_exists(self, connection_id: int) -> bool:
         """Check if connection exists."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
@@ -131,8 +169,8 @@ class DatabaseManager:
             )
             return result is not None
 
-    async def get_connection(self, connection_id: str) -> DatabaseConnection | None:
-        """Get a specific database connection."""
+    async def get_connection(self, connection_id: int) -> DatabaseConnection | None:
+        """Get a specific database connection with decrypted password."""
         try:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
@@ -148,6 +186,16 @@ class DatabaseManager:
                 )
 
                 if row:
+                    # Decrypt password if present
+                    password = None
+                    if row["password_hash"]:
+                        try:
+                            password = self._decrypt_password(row["password_hash"])
+                        except Exception:
+                            # If decryption fails, password might be old bcrypt hash
+                            # Leave it as None to maintain security
+                            pass
+
                     return DatabaseConnection(
                         id=row["id"],
                         name=row["name"],
@@ -155,6 +203,7 @@ class DatabaseManager:
                         port=row["port"],
                         database=row["database_name"],
                         username=row["username"],
+                        password=password,  # Now includes decrypted password
                         password_hash=row["password_hash"],
                         salt=row["salt"],
                         ssl_mode=row["ssl_mode"],
@@ -168,7 +217,7 @@ class DatabaseManager:
         except Exception:
             return None
 
-    async def delete_connection(self, connection_id: str) -> bool:
+    async def delete_connection(self, connection_id: int) -> bool:
         """Delete a database connection."""
         try:
             pool = await self._get_pool()
@@ -179,7 +228,7 @@ class DatabaseManager:
             return False
 
     async def get_all_connections(self) -> list[DatabaseConnection]:
-        """Get all active database connections."""
+        """Get all active database connections with decrypted passwords."""
         try:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
@@ -196,6 +245,16 @@ class DatabaseManager:
 
                 connections = []
                 for row in rows:
+                    # Decrypt password if present
+                    password = None
+                    if row["password_hash"]:
+                        try:
+                            password = self._decrypt_password(row["password_hash"])
+                        except Exception:
+                            # If decryption fails, password might be old bcrypt hash
+                            # Leave it as None to maintain security
+                            pass
+
                     connections.append(
                         DatabaseConnection(
                             id=row["id"],
@@ -204,6 +263,7 @@ class DatabaseManager:
                             port=row["port"],
                             database=row["database_name"],
                             username=row["username"],
+                            password=password,  # Now includes decrypted password
                             password_hash=row["password_hash"],
                             salt=row["salt"],
                             ssl_mode=row["ssl_mode"],
@@ -218,6 +278,12 @@ class DatabaseManager:
                 return connections
         except Exception:
             return []
+
+    async def test_connection(self, connection: DatabaseConnection) -> dict:
+        """Test a database connection using the connection's decrypted password."""
+        if not connection.password:
+            return {"success": False, "error": "No password available for connection"}
+        return await self.test_connection_with_password(connection, connection.password)
 
     async def test_connection_with_password(
         self, connection: DatabaseConnection, password: str
@@ -283,9 +349,10 @@ class DatabaseManager:
             return False
         return bcrypt.checkpw(password.encode(), connection.password_hash.encode())
 
-    def generate_connection_id(self) -> str:
-        """Generate a unique connection ID."""
-        return f"db_{secrets.token_hex(8)}"
+    def generate_connection_id(self) -> int:
+        """Generate a unique connection ID (not used - PostgreSQL auto-generates)."""
+        # This method is deprecated - PostgreSQL auto-generates integer IDs
+        raise NotImplementedError("Connection IDs are now auto-generated by PostgreSQL")
 
     async def close(self):
         """Close database connection pool."""
