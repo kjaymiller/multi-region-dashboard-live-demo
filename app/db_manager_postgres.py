@@ -69,7 +69,7 @@ class DatabaseManager:
                     # Update existing connection
                     await conn.execute("""
                         UPDATE database_connections 
-                        SET name = $1, host = $2, port = $3, database = $4,
+                        SET name = $1, host = $2, port = $3, database_name = $4,
                             username = $5, password_hash = $6, salt = $7, 
                             ssl_mode = $8, region = $9, cloud_provider = $10,
                             is_active = $11, updated_at = CURRENT_TIMESTAMP
@@ -85,7 +85,7 @@ class DatabaseManager:
                     conn_id = connection.id or f"db_{secrets.token_hex(8)}"
                     await conn.execute("""
                         INSERT INTO database_connections 
-                        (id, name, host, port, database, username, password_hash, 
+                        (id, name, host, port, database_name, username, password_hash, 
                          salt, ssl_mode, region, cloud_provider, is_active)
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                     """,
@@ -167,7 +167,7 @@ class DatabaseManager:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch("""
-                    SELECT id, name, host, port, database, username,
+                    SELECT id, name, host, port, database_name, username,
                            password_hash, salt, ssl_mode, region, cloud_provider,
                            is_active, created_at, updated_at
                     FROM database_connections 
@@ -182,7 +182,7 @@ class DatabaseManager:
                         name=row['name'],
                         host=row['host'],
                         port=row['port'],
-                        database=row['database'],
+                        database=row['database_name'],
                         username=row['username'],
                         password_hash=row['password_hash'],
                         salt=row['salt'],
