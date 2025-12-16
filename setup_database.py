@@ -21,18 +21,18 @@ async def setup_database():
         conn = await asyncpg.connect(database_url)
         print(f"✓ Connected to database")
 
-        # Create database_connections table if it doesn't exist
+        # Create database_connections table with SERIAL primary key
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS database_connections (
-                id VARCHAR(50) PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
                 name VARCHAR(100) NOT NULL,
                 host VARCHAR(255) NOT NULL,
-                port INTEGER NOT NULL,
+                port INTEGER NOT NULL CHECK (port >= 1 AND port <= 65535),
                 database_name VARCHAR(63) NOT NULL,
                 username VARCHAR(63) NOT NULL,
                 password_hash TEXT NOT NULL,
-                salt VARCHAR(50) NOT NULL,
-                ssl_mode VARCHAR(20) DEFAULT 'require',
+                salt TEXT NOT NULL,
+                ssl_mode VARCHAR(20) DEFAULT 'require' CHECK (ssl_mode IN ('require', 'prefer', 'disable')),
                 region VARCHAR(50),
                 cloud_provider VARCHAR(50),
                 is_active BOOLEAN DEFAULT TRUE,
@@ -40,7 +40,44 @@ async def setup_database():
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        print("✓ database_connections table ready")
+        
+        # Create indexes for database_connections
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_database_connections_region 
+            ON database_connections(region)
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_database_connections_cloud_provider 
+            ON database_connections(cloud_provider)
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_database_connections_is_active 
+            ON database_connections(is_active)
+        """)
+        
+        # Create trigger to update updated_at column
+        await conn.execute("""
+            CREATE OR REPLACE FUNCTION update_updated_at_column()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                NEW.updated_at = CURRENT_TIMESTAMP;
+                RETURN NEW;
+            END;
+            $$ language 'plpgsql'
+        """)
+
+        # Drop trigger if exists, then create it
+        await conn.execute("""
+            DROP TRIGGER IF EXISTS update_database_connections_updated_at ON database_connections
+        """)
+
+        await conn.execute("""
+            CREATE TRIGGER update_database_connections_updated_at
+                BEFORE UPDATE ON database_connections
+                FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+        """)
+        
+        print("✓ database_connections table created with SERIAL primary key")
 
         # Create locations table
         await conn.execute("""
@@ -69,6 +106,95 @@ async def setup_database():
             CREATE INDEX IF NOT EXISTS idx_locations_cloud_provider ON locations(cloud_provider)
         """)
         print("✓ locations indexes created")
+
+        # Create connection_tests table for TimescaleDB hypertable
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS connection_tests (
+                id BIGSERIAL,
+                connection_id INTEGER NOT NULL,
+                timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                test_type VARCHAR(50) NOT NULL,
+                success BOOLEAN NOT NULL,
+                latency_ms NUMERIC(10, 2),
+                server_ip TEXT,
+                pg_version TEXT,
+                backend_pid INTEGER,
+                error_message TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                CONSTRAINT fk_connection
+                    FOREIGN KEY (connection_id)
+                    REFERENCES database_connections(id)
+                    ON DELETE CASCADE
+            )
+        """)
+        print("✓ connection_tests table created")
+
+        # Convert to TimescaleDB hypertable if not already converted
+        try:
+            await conn.execute("""
+                SELECT create_hypertable(
+                    'connection_tests',
+                    'timestamp',
+                    if_not_exists => TRUE,
+                    migrate_data => TRUE
+                )
+            """)
+            print("✓ connection_tests converted to TimescaleDB hypertable")
+        except Exception as e:
+            print(f"⚠ Note: Hypertable conversion skipped (may already exist): {e}")
+
+        # Configure compression policy for connection_tests
+        compression_after_days = int(os.getenv("TIMESCALE_COMPRESSION_AFTER_DAYS", "7"))
+        try:
+            # First, enable compression on the hypertable
+            await conn.execute("""
+                ALTER TABLE connection_tests SET (
+                    timescaledb.compress,
+                    timescaledb.compress_segmentby = 'connection_id',
+                    timescaledb.compress_orderby = 'timestamp DESC'
+                )
+            """)
+            print(f"✓ Compression enabled on connection_tests hypertable")
+
+            # Add compression policy (compress chunks older than X days)
+            await conn.execute(f"""
+                SELECT add_compression_policy('connection_tests',
+                    INTERVAL '{compression_after_days} days',
+                    if_not_exists => TRUE
+                )
+            """)
+            print(f"✓ Compression policy added: compress data older than {compression_after_days} days")
+        except Exception as e:
+            print(f"⚠ Note: Compression policy setup skipped (may already exist): {e}")
+
+        # Configure retention policy for connection_tests
+        retention_days = int(os.getenv("TIMESCALE_RETENTION_DAYS", "90"))
+        try:
+            # Add retention policy (drop chunks older than X days)
+            await conn.execute(f"""
+                SELECT add_retention_policy('connection_tests',
+                    INTERVAL '{retention_days} days',
+                    if_not_exists => TRUE
+                )
+            """)
+            print(f"✓ Retention policy added: drop data older than {retention_days} days")
+        except Exception as e:
+            print(f"⚠ Note: Retention policy setup skipped (may already exist): {e}")
+
+        # Create indexes for connection_tests
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_connection_tests_connection_id
+            ON connection_tests(connection_id, timestamp DESC)
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_connection_tests_timestamp
+            ON connection_tests(timestamp DESC)
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_connection_tests_success
+            ON connection_tests(success, timestamp DESC)
+        """)
+        print("✓ connection_tests indexes created")
 
         # Check if locations table has data
         count = await conn.fetchval("SELECT COUNT(*) FROM locations")
