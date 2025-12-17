@@ -1,30 +1,63 @@
-# Multi-Region PostgreSQL Testing Dashboard
+# PostgreSQL Connection Dashboard
 
-An interactive FastAPI dashboard for managing and testing PostgreSQL database connections. Features HTMX for dynamic frontend updates, comprehensive CRUD operations, and TimescaleDB integration for connection test history.
+An interactive FastAPI dashboard for managing and testing PostgreSQL database connections. Features real-time monitoring, performance analytics with Chart.js visualizations, geographic mapping, and an AI-powered chat assistant for database insights.
 
 ## Features
 
-- **Database Connection Management**: Create, read, update, delete PostgreSQL connections
-- **PostgreSQL Backend**: Secure storage with bcrypt password hashing and TimescaleDB for time-series data
-- **Real-time Frontend Updates**: HTMX-powered interface for seamless CRUD operations
-- **Connection Testing**: Validate database connectivity with latency measurement
-- **Geographic Visualization**: Interactive map showing connection locations
-- **AI Chat Assistant**: Performance insights powered by Ollama
-- **Secure Storage**: bcrypt password hashing for maximum security
-- **Auto-refresh Interface**: HTMX triggers for immediate UI updates after changes
+### Core Functionality
+- **Database Connection Management**: Full CRUD operations for PostgreSQL connections with secure credential storage
+- **Real-time Testing & Monitoring**: Connection validation, latency measurement, and load testing
+- **Health Checks**: Comprehensive metrics including cache hit ratio, active connections, database size, and query performance
+- **Time-Series Analytics**: Historical performance data stored in TimescaleDB hypertables with 90-day retention
+
+### Visualization & UI
+- **Interactive Charts**: Chart.js-powered visualizations for latency trends, health metrics, and query performance
+- **Geographic Map**: Leaflet.js map showing database locations with visual connections to user location
+- **HTMX-Powered UI**: Dynamic updates without page reloads for seamless user experience
+- **Responsive Design**: Bootstrap-based interface that works on desktop and mobile
+
+### Performance & Security
+- **AI Chat Assistant**: Ollama-powered natural language interface for performance insights and query analysis
+- **Query Analytics**: Expensive query tracking via pg_stat_statements with execution time statistics
+- **Encrypted Credentials**: bcrypt password hashing (12 rounds) with additional encryption layer
+- **SSL Auto-Detection**: Automatic SSL enforcement for remote databases, disabled for localhost
+
+### Developer Experience
+- **Fast Setup**: One-command initialization with just and uv package manager
+- **Docker Integration**: Local PostgreSQL with TimescaleDB via Docker Compose
+- **Code Quality**: Black formatting, Ruff linting, mypy type checking
+- **Task Management**: Beads issue tracker for project management
 
 ## Tech Stack
 
-- **FastAPI**: Modern Python web framework with async support
-- **PostgreSQL**: Backend database with bcrypt password hashing and TimescaleDB for time-series data
-- **HTMX**: Dynamic HTML updates without JavaScript frameworks
-- **Jinja2**: Template engine for server-side rendering
-- **Alpine.js**: Client-side interactivity and state management
-- **Bootstrap**: Responsive CSS framework
-- **Cryptography**: Password encryption and hashing
-- **asyncpg**: Fast PostgreSQL async driver
-- **TimescaleDB**: Time-series database extension for connection test history
-- **uv**: Fast Python package installer and resolver
+### Backend
+- **FastAPI 0.104+**: Modern async Python web framework with automatic OpenAPI documentation
+- **PostgreSQL 15+**: Relational database for application storage
+- **TimescaleDB**: Time-series extension for connection test history hypertables
+- **asyncpg 0.29+**: High-performance async PostgreSQL driver
+- **bcrypt 5.0+**: Password hashing with 12 rounds for security
+- **cryptography 46+**: Additional encryption layer for stored credentials
+
+### Frontend
+- **HTMX**: Server-driven HTML updates without heavy JavaScript frameworks
+- **Alpine.js**: Lightweight reactive framework for client-side state management
+- **Bootstrap**: Responsive CSS framework for mobile-friendly design
+- **Chart.js 4.4+**: Modern charting library for performance visualizations
+- **Leaflet.js**: Interactive mapping for geographic database locations
+- **Jinja2 3.1.2+**: Server-side template engine
+
+### Development Tools
+- **uv**: Lightning-fast Python package installer and resolver
+- **just**: Command runner for task automation
+- **Black**: Code formatter with 100-character line length
+- **Ruff**: Fast Python linter and import sorter
+- **mypy**: Static type checker for Python
+- **Beads (bd)**: Issue tracking and task management
+
+### AI & Analytics
+- **Ollama**: Local AI model integration for chat assistant
+- **httpx 0.27+**: Async HTTP client for AI service communication
+- **pg_stat_statements**: PostgreSQL extension for query performance monitoring
 
 ## Prerequisites
 
@@ -38,8 +71,7 @@ An interactive FastAPI dashboard for managing and testing PostgreSQL database co
 - **Target PostgreSQL databases** (to monitor):
   - **pg_stat_statements extension** (recommended for comprehensive health checks)
   - Without this extension, health checks will work but provide limited query statistics
-  - Aiven PostgreSQL or any PostgreSQL instances to test
-- LaunchDarkly account (for feature flags)
+  - Any PostgreSQL instances you want to monitor and test
 
 ## Quick Start
 
@@ -47,7 +79,7 @@ An interactive FastAPI dashboard for managing and testing PostgreSQL database co
 
 ```bash
 git clone <repository-url>
-cd multi-region-dashboard-live-demo
+cd <repository-directory>
 ```
 
 ### 2. Install dependencies
@@ -87,20 +119,27 @@ This creates all required tables, including the TimescaleDB hypertable for conne
 
 ### 5. Configure environment variables
 
-Edit `.env` and add your database connection strings and LaunchDarkly SDK key:
+Edit `.env` with your configuration:
 
 ```env
 # Backend Database (for storing connection metadata and test history)
 # Must have TimescaleDB and pg_stat_statements extensions enabled
 DATABASE_URL=postgresql://dashboard_user:dashboard_password@localhost:5432/dashboard
 
-# Aiven PostgreSQL Connection Strings (use PgBouncer connection strings on port 6543)
-AIVEN_PG_US_EAST=postgresql://user:password@host:6543/defaultdb?sslmode=require
-AIVEN_PG_EU_WEST=postgresql://user:password@host:6543/defaultdb?sslmode=require
-AIVEN_PG_ASIA_PACIFIC=postgresql://user:password@host:6543/defaultdb?sslmode=require
+# Password Encryption Key (generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+DB_PASSWORD_ENCRYPTION_KEY=your-generated-encryption-key-here
 
-# LaunchDarkly SDK Key
-LAUNCHDARKLY_SDK_KEY=sdk-your-key-here
+# AI Chat Configuration (optional)
+OLLAMA_BASE_URL=http://localhost:11434  # Default Ollama endpoint
+OLLAMA_MODEL=gpt-oss                    # AI model to use
+CHAT_ENABLED=true                       # Enable/disable chat feature
+
+# TimescaleDB Configuration
+TIMESCALE_RETENTION_DAYS=90            # Days to keep test history
+TIMESCALE_CHUNK_TIME_INTERVAL=7 days   # Chunk interval for hypertables
+
+# Example Target Database Connections (add via UI)
+# You can add database connections through the web interface after starting the application
 ```
 
 ### 6. Run the application
@@ -146,64 +185,90 @@ just setup            # Full project setup
 ## Project Structure
 
 ```
-multi-region-dashboard-live-demo/
+postgres-dashboard/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py              # FastAPI application and lifespan
-│   ├── config.py            # Database configuration
-│   ├── database.py          # Database connection utilities
-│   ├── queries.py           # PostgreSQL query definitions
-│   ├── chat.py            # AI chat assistant logic
-│   ├── region_mapping.py    # Geographic coordinate mapping
-│   ├── db_manager_postgres.py # PostgreSQL backend manager
+│   ├── main.py                      # FastAPI application and lifespan
+│   ├── config.py                    # Database configuration
+│   ├── database.py                  # Database connection utilities
+│   ├── queries.py                   # PostgreSQL query definitions
+│   ├── chat.py                      # AI chat assistant logic
+│   ├── location_service.py          # Geographic distance calculations
+│   ├── region_mapping.py            # Geographic coordinate mapping
+│   ├── db_manager_postgres.py       # PostgreSQL backend manager
 │   ├── routers/
-│   │   ├── api.py           # General API endpoints
+│   │   ├── api.py                   # Health checks, testing, analytics endpoints
 │   │   ├── db_management_postgres.py # PostgreSQL CRUD endpoints
-│   │   └── pages.py         # HTML page routes
-│   ├── static/              # Static assets (CSS, JS)
-│   └── templates/           # Jinja2 templates
-│       ├── base.html         # Base template with HTMX setup
-│       ├── index.html         # Main dashboard page
-│       └── partials/        # Reusable UI components
+│   │   └── pages.py                 # HTML page routes
+│   ├── static/                      # Static assets (CSS, JS)
+│   └── templates/                   # Jinja2 templates
+│       ├── base.html                # Base template with HTMX, Chart.js, Leaflet
+│       ├── index.html               # Main dashboard page
+│       └── partials/                # HTMX-swappable UI components
 │           ├── database_connections.html
 │           ├── connection_form.html
-│           ├── connection_result.html
-│           ├── connection_details.html
-│           ├── map_view.html
+│           ├── health_result.html   # Health check with Chart.js visualizations
+│           ├── metrics_charts.html  # Performance charts
+│           ├── map_view.html        # Geographic visualization
 │           └── ...
-├── .beads/                  # Beads task management
-├── migrations/              # SQL migration scripts (run via docker-entrypoint-initdb.d)
-├── setup_database.py        # Database schema setup (no Alembic/migrations)
-├── .env                    # Environment variables (not in git)
-├── .env.example            # Example environment variables
-├── justfile                # Command runner recipes
-├── pyproject.toml          # Project configuration and dependencies
+├── .beads/                          # Beads task management
+├── migrations/                      # SQL initialization scripts
+├── setup_database.py                # Database schema setup (no Alembic)
+├── .env                             # Environment variables (not in git)
+├── .env.example                     # Example environment variables
+├── docker-compose.yml               # Docker development environment
+├── justfile                         # Command runner recipes
+├── pyproject.toml                   # Project configuration and dependencies
+├── CLAUDE.md                        # Development guidelines
+├── DOCKER_SETUP.md                  # Docker deployment documentation
 └── README.md
 ```
 
-## Configured Regions
+## Adding Database Connections
 
-The dashboard is pre-configured with three regions:
+Database connections are managed through the web UI:
 
-1. **US East (Virginia)** - Primary testing region
-2. **EU West (Ireland)** - European testing region
-3. **Asia Pacific (Singapore)** - APAC testing region
+1. Navigate to the dashboard at `http://localhost:8000`
+2. Use the connection form to add PostgreSQL databases
+3. Configure: host, port, database name, username, password, SSL mode
+4. Optionally set region (e.g., "US East", "EU West") and cloud provider
+5. Test connection automatically upon creation
 
-To add or modify regions, edit `app/config.py` and update the `REGIONS` dictionary.
+The dashboard supports any PostgreSQL database - local, cloud-hosted, or managed services.
 
 ## API Endpoints
 
-### Health Checks
-- `GET /api/health/{region_id}` - Check health of a specific region
-- `GET /api/health/all` - Check health of all regions
+### Health & Monitoring
+- `GET /api/health/{connection_id}` - Get comprehensive health metrics for a database
+- `GET /api/health/all` - Health check all configured databases
+- `GET /api/database/info` - Get database configuration information
+- `GET /api/database-summary` - Overall summary statistics across all databases
 
-### Connectivity Tests
-- `POST /api/test/connection/{region_id}` - Test connection to a region
-- `POST /api/test/all-regions` - Test all regions
+### Connection Testing
+- `POST /api/test/connection/{connection_id}` - Test connectivity and measure latency
+- `POST /api/test/all-regions` - Test all configured database connections
+- `POST /api/test/latency/{connection_id}` - Run multiple iterations of latency tests (5 rounds)
+- `POST /api/test/load/{connection_id}` - Execute load test with concurrent connections
 
-### Performance Tests
-- `POST /api/test/latency/{region_id}` - Measure query latency
-- `POST /api/test/load/{region_id}` - Run load test with concurrent connections
+### Analytics & Visualization
+- `GET /api/latency-chart-data` - Time-series latency data for Chart.js visualization
+- `GET /api/health-metrics-chart-data` - Historical health metrics for charts
+- `GET /api/recent-checks` - Recent connection test history
+- `GET /api/expensive-queries` - Query performance statistics from pg_stat_statements
+- `GET /api/map-data` - Geographic data for interactive map
+
+### AI & Chat
+- `POST /api/chat` - Send natural language queries to AI assistant
+- Chat context includes database performance metrics and query statistics
+
+### Database Management (CRUD)
+- `GET /api/db/connections` - List all database connections
+- `POST /api/db/connections` - Create new database connection
+- `PUT /api/db/connections/{connection_id}` - Update existing connection
+- `DELETE /api/db/connections/{connection_id}` - Delete database connection
+
+### Utility
+- `GET /api/location` - Detect user's geographic location for distance calculations
 
 ## Development
 
@@ -339,21 +404,7 @@ If health checks succeed but don't show query performance data:
 
 [Add your license here]
 
-## Recent Updates & Fixes
-
-### Bug Fixes Applied
-
-1. **Delete Functionality** (Dec 2025):
-   - Fixed SQL column name mismatches
-   - Corrected `database` vs `database_name` column references
-   - Delete endpoints now work correctly
-
-2. **Frontend Refresh Issues** (Dec 2025):
-   - Identified: HTMX triggers only fire on successful connection creation
-   - Connection test failures don't refresh list despite successful saves
-   - JavaScript quote escaping issue identified
-
-### Development Workflow
+## Development Workflow
 
 The project uses **Beads** for issue tracking:
 ```bash
