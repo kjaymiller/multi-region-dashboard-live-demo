@@ -3,8 +3,8 @@
 Jay Miller
 
 - Founder Black Python Devs - <https://blackpythondevs.com>
-- Staff Product Advocate - Aiven
-  - Databases starting at $5
+- Staff Product Advocate - Aiven - <https://aiven.io/jay>
+  - PostgreSQL/MySQL Databases starting at $5
   - Free Tier Data Streaming (Apache Kafka)
 
 ---
@@ -28,11 +28,23 @@ Jay Miller
 
 ---
 
+FastAPI - Because ASYNC and APIs and per route connections
+HTMX - Make Python Act like Angular (Single Page Web Apps)
+Alpine.js - some state stuff, I'm learning more about it
+Docker - Because Containers
+
+## WHOLE LOTTA AI
+
+- CLAUDE
+- Opencode (Big Pickle OpenCode Zen) - Because it's Free
+
+---
+
 ## What makes this helpful
 
-- Maps
-- Charts
-- AI
+- Maps - Leaflet.js
+- Charts - Chart.js
+- AI - Ollama
 
 ---
 
@@ -198,8 +210,17 @@ more at <https://www.chartjs.org/docs/latest/getting-started/usage.html>
 
 - **Natural language queries**: Ask questions about your database health
 - MCP: POSTGRESQL PRO - Query Optimization, (Not Implemented)
+- DON'T LEAK YOUR DATA TO AI!
 
 ---
 
-
 ## Demo!
+
+--
+
+Thanks!
+
+<https://kjaymiller.com>
+
+P.S. Donate to Black Python Devs!
+<https://blackpythondevs.com>
